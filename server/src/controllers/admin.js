@@ -8,7 +8,7 @@ const bcrypt = require('bcrypt');
 const YOUR_ADMIN_SECRET_KEY_ARRAY = require("/home/tiggs777/.config/solana/id.json");
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 const adminKeypair = Keypair.fromSecretKey(Uint8Array.from(YOUR_ADMIN_SECRET_KEY_ARRAY));
-
+const { createTransferInstruction } = require('@solana/spl-token');
 const verifyToken = (token) => {
   try {
     return jwt.verify(token, 'secret');
@@ -294,67 +294,172 @@ exports.getUserTokens = async (req, res) => {
 };
 
 exports.airdropTokens = async (req, res) => {
-  const { userId, amount, mint } = req.body;
+  const { userIds, groupId, amount, mint } = req.body; // Accept userIds or groupId
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    let targetUserIds = [];
+    if (userIds) {
+      targetUserIds = userIds.map(id => parseInt(id)).filter(id => !isNaN(id));
+    } else if (groupId) {
+      const groupResult = await pool.query(
+        'SELECT user_id FROM user_group_members WHERE group_id = $1',
+        [groupId]
+      );
+      targetUserIds = groupResult.rows.map(row => row.user_id);
+    } else {
+      return res.status(400).json({ error: 'Provide either userIds or groupId' });
+    }
+
+    if (targetUserIds.length === 0) return res.status(404).json({ error: 'No users found' });
+
+    const mintPubkey = new PublicKey(mint);
+    const adminBalance = await connection.getBalance(adminKeypair.publicKey);
+    console.log('Admin SOL balance:', adminBalance / 1e9, 'SOL');
+    if (adminBalance < 0.01 * targetUserIds.length) {
+      throw new Error('Admin wallet has insufficient SOL to pay fees for all airdrops');
+    }
+
+    const adjustedAmount = amount * Math.pow(10, 9);
+    let successCount = 0;
+    const messages = [];
+
+    for (const userId of targetUserIds) {
+      const userResult = await pool.query('SELECT wallet FROM users WHERE id = $1', [userId]);
+      if (!userResult.rows[0]?.wallet) continue;
+
+      const userWallet = new PublicKey(userResult.rows[0].wallet);
+      const destinationATA = await getAssociatedTokenAddress(mintPubkey, userWallet);
+
+      const accountInfo = await connection.getAccountInfo(destinationATA);
+      if (!accountInfo) {
+        const transaction = new Transaction().add(
+          createAssociatedTokenAccountInstruction(
+            adminKeypair.publicKey,
+            destinationATA,
+            userWallet,
+            mintPubkey
+          )
+        );
+        await sendAndConfirmTransaction(connection, transaction, [adminKeypair]);
+      }
+
+      const tx = await mintTo(
+        connection,
+        adminKeypair,
+        mintPubkey,
+        destinationATA,
+        adminKeypair,
+        adjustedAmount
+      );
+      console.log(`Airdropped ${amount} tokens to user ${userId}, tx:`, tx);
+      console.log(`This action adds ${amount} tokens to the total circulating supply for ${mint}`);
+
+      const ataAccount = await getAccount(connection, destinationATA);
+      console.log(`User ${userId} ATA balance after airdrop:`, Number(ataAccount.amount) / Math.pow(10, 9));
+      successCount++;
+      messages.push(`Airdropped ${amount} tokens to user ${userId} (adds to total circulating supply)`);
+    }
+
+    await pool.query(
+      'UPDATE tokens SET supply = supply + $1 WHERE mint = $2',
+      [amount * targetUserIds.length, mint]
+    );
+
+    res.json({
+      success: true,
+      message: `${successCount} users received ${amount} tokens`,
+      details: messages
+    });
+  } catch (error) {
+    console.error('Airdrop error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to airdrop tokens', details: error.message });
+  }
+};
+
+exports.transferTokens = async (req, res) => {
+  const { userIds, groupId, amount, mint } = req.body; // Accept userIds or groupId
   const token = req.headers.authorization?.split(' ')[1];
   try {
     const decoded = verifyToken(token);
     if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
-    const userResult = await pool.query('SELECT wallet FROM users WHERE id = $1', [userId]);
-    if (!userResult.rows[0]?.wallet) return res.status(404).json({ error: 'User wallet not found' });
+    let targetUserIds = [];
+    if (userIds) {
+      targetUserIds = userIds.map(id => parseInt(id)).filter(id => !isNaN(id));
+    } else if (groupId) {
+      const groupResult = await pool.query(
+        'SELECT user_id FROM user_group_members WHERE group_id = $1',
+        [groupId]
+      );
+      targetUserIds = groupResult.rows.map(row => row.user_id);
+    } else {
+      return res.status(400).json({ error: 'Provide either userIds or groupId' });
+    }
 
-    const userWallet = new PublicKey(userResult.rows[0].wallet);
+    if (targetUserIds.length === 0) return res.status(404).json({ error: 'No users found' });
+
     const mintPubkey = new PublicKey(mint);
-
-    console.log('Airdropping:', { userId, amount, mint, userWallet: userWallet.toBase58() });
-
     const adminBalance = await connection.getBalance(adminKeypair.publicKey);
     console.log('Admin SOL balance:', adminBalance / 1e9, 'SOL');
-    if (adminBalance < 0.01) throw new Error('Admin wallet has insufficient SOL to pay fees');
+    if (adminBalance < 0.01 * targetUserIds.length) {
+      throw new Error('Admin wallet has insufficient SOL to pay fees for all transfers');
+    }
 
-    const destinationATA = await getAssociatedTokenAddress(mintPubkey, userWallet);
-    const adminATA = await getOrCreateAssociatedTokenAccount(
+    const sourceATA = await getOrCreateAssociatedTokenAccount(
       connection,
       adminKeypair,
       mintPubkey,
       adminKeypair.publicKey
     );
-
-    const accountInfo = await connection.getAccountInfo(destinationATA);
-    if (!accountInfo) {
-      console.log('ATA does not exist, creating...');
-      const transaction = new Transaction().add(
-        createAssociatedTokenAccountInstruction(
-          adminKeypair.publicKey,
-          destinationATA,
-          userWallet,
-          mintPubkey
-        )
-      );
-      const txHash = await sendAndConfirmTransaction(connection, transaction, [adminKeypair]);
-      console.log('ATA created, tx:', txHash);
+    const adjustedAmount = amount * Math.pow(10, 9);
+    const sourceAccount = await getAccount(connection, sourceATA.address);
+    if (Number(sourceAccount.amount) < adjustedAmount * targetUserIds.length) {
+      return res.status(400).json({ error: 'Insufficient tokens in admin account for all transfers' });
     }
 
-    const adjustedAmount = amount * Math.pow(10, 9);
-    const tx = await mintTo(
-      connection,
-      adminKeypair,
-      mintPubkey,
-      destinationATA,
-      adminKeypair,
-      adjustedAmount
-    );
-    console.log('Airdrop transaction:', tx);
+    let successCount = 0;
+    const messages = [];
 
-    const ataAccount = await getAccount(connection, destinationATA);
-    console.log('User ATA balance after airdrop:', Number(ataAccount.amount) / Math.pow(10, 9));
-    const adminPostAirdrop = await getAccount(connection, adminATA.address);
-    console.log('Admin ATA balance post-airdrop:', Number(adminPostAirdrop.amount) / Math.pow(10, 9));
+    for (const userId of targetUserIds) {
+      const userResult = await pool.query('SELECT wallet FROM users WHERE id = $1', [userId]);
+      if (!userResult.rows[0]?.wallet) continue;
 
-    res.json({ success: true, message: `Airdropped ${amount} tokens to ${destinationATA.toBase58()}` });
+      const userWallet = new PublicKey(userResult.rows[0].wallet);
+      const destinationATA = await getAssociatedTokenAddress(mintPubkey, userWallet);
+
+      const transaction = new Transaction();
+      transaction.add(
+        createTransferInstruction(
+          sourceATA.address,
+          destinationATA,
+          adminKeypair.publicKey,
+          adjustedAmount,
+          [],
+          TOKEN_PROGRAM_ID
+        )
+      );
+
+      const txHash = await sendAndConfirmTransaction(connection, transaction, [adminKeypair]);
+      console.log(`Transferred ${amount} tokens to user ${userId}, tx:`, txHash);
+
+      const userPostTransfer = await getAccount(connection, destinationATA);
+      console.log(`User ${userId} ATA balance after transfer:`, Number(userPostTransfer.amount) / Math.pow(10, 9));
+      const adminPostTransfer = await getAccount(connection, sourceATA.address);
+      console.log('Admin ATA balance post-transfer:', Number(adminPostTransfer.amount) / Math.pow(10, 9));
+      successCount++;
+      messages.push(`Transferred ${amount} tokens to user ${userId}`);
+    }
+
+    res.json({
+      success: true,
+      message: `${successCount} users received ${amount} tokens`,
+      details: messages
+    });
   } catch (error) {
-    console.error('Airdrop error:', error.message, error.stack);
-    res.status(500).json({ error: 'Failed to airdrop tokens', details: error.message });
+    console.error('Transfer error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to transfer tokens', details: error.message });
   }
 };
 
@@ -364,7 +469,25 @@ exports.getUsers = async (req, res) => {
     const decoded = verifyToken(token);
     if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
-    const result = await pool.query('SELECT id, email, wallet FROM users');
+    const { sort = 'created_at', order = 'desc', startDate, endDate } = req.query;
+    let query = 'SELECT id, email, wallet FROM users';
+    let params = [];
+    let whereClause = [];
+
+    if (startDate || endDate) {
+      if (startDate) {
+        whereClause.push('created_at >= $' + (params.length + 1));
+        params.push(new Date(startDate).toISOString());
+      }
+      if (endDate) {
+        whereClause.push('created_at <= $' + (params.length + 1));
+        params.push(new Date(endDate).toISOString());
+      }
+      query += ' WHERE ' + whereClause.join(' AND ');
+    }
+
+    query += ' ORDER BY ' + sort + ' ' + order;
+    const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
     console.error('Get users error:', error.message, error.stack);
@@ -385,7 +508,7 @@ exports.createUser = async (req, res) => {
     const privateKey = Buffer.from(keypair.secretKey).toString('base64');
 
     const result = await pool.query(
-      'INSERT INTO users (email, password, wallet, private_key, role) VALUES ($1, $2, $3, $4, $5) RETURNING id',
+      'INSERT INTO users (email, password, wallet, private_key, role, created_at) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP) RETURNING id',
       [email, hashedPassword, publicKey, privateKey, role || 'user']
     );
     res.json({ id: result.rows[0].id, message: 'User created' });
@@ -449,6 +572,95 @@ exports.impersonateUser = async (req, res) => {
   }
 };
 
+exports.createUserGroup = async (req, res) => {
+  const { name, userIds } = req.body;
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    const result = await pool.query(
+      'INSERT INTO user_groups (name) VALUES ($1) RETURNING id',
+      [name]
+    );
+    const groupId = result.rows[0].id;
+
+    if (userIds && userIds.length > 0) {
+      const values = userIds.map(userId => `(${groupId}, ${userId})`).join(', ');
+      await pool.query(
+        `INSERT INTO user_group_members (group_id, user_id) VALUES ${values}`
+      );
+    }
+
+    res.json({ success: true, message: `User group ${name} created`, id: groupId });
+  } catch (error) {
+    console.error('Create user group error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to create user group', details: error.message });
+  }
+};
+
+exports.getUserGroups = async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    const groups = await pool.query(`
+      SELECT ug.id, ug.name, json_agg(u.id) as user_ids
+      FROM user_groups ug
+      LEFT JOIN user_group_members ugm ON ug.id = ugm.group_id
+      LEFT JOIN users u ON ugm.user_id = u.id
+      GROUP BY ug.id, ug.name
+    `);
+    res.json(groups.rows);
+  } catch (error) {
+    console.error('Get user groups error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch user groups', details: error.message });
+  }
+};
+
+exports.updateUserGroup = async (req, res) => {
+  const { groupId, name, userIds } = req.body;
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    await pool.query('UPDATE user_groups SET name = $1 WHERE id = $2', [name, groupId]);
+
+    // Clear existing members
+    await pool.query('DELETE FROM user_group_members WHERE group_id = $1', [groupId]);
+
+    // Add new members
+    if (userIds && userIds.length > 0) {
+      const values = userIds.map(userId => `(${groupId}, ${userId})`).join(', ');
+      await pool.query(
+        `INSERT INTO user_group_members (group_id, user_id) VALUES ${values}`
+      );
+    }
+
+    res.json({ success: true, message: `User group ${name} updated` });
+  } catch (error) {
+    console.error('Update user group error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to update user group', details: error.message });
+  }
+};
+
+exports.deleteUserGroup = async (req, res) => {
+  const { groupId } = req.body;
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    await pool.query('DELETE FROM user_group_members WHERE group_id = $1', [groupId]);
+    await pool.query('DELETE FROM user_groups WHERE id = $1', [groupId]);
+    res.json({ success: true, message: 'User group deleted' });
+  } catch (error) {
+    console.error('Delete user group error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to delete user group', details: error.message });
+  };
+} 
 exports.seedTravelPackages = async () => {
   const packages = [
     { name: 'Paris Getaway', price: 500, image_url: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34', description: 'A romantic escape to the City of Lights.' },
@@ -503,13 +715,28 @@ exports.getAllUsersInfo = async (req, res) => {
     const decoded = verifyToken(token);
     if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
-    const users = await pool.query('SELECT id, email, wallet, private_key, role FROM users');
+    const { sort = 'created_at', order = 'desc', startDate, endDate } = req.query;
+    let query = 'SELECT id, email, wallet, private_key, role, created_at FROM users';
+    let params = [];
+    let whereClause = [];
+
+    if (startDate || endDate) {
+      if (startDate) {
+        whereClause.push('created_at >= $' + (params.length + 1));
+        params.push(new Date(startDate).toISOString());
+      }
+      if (endDate) {
+        whereClause.push('created_at <= $' + (params.length + 1));
+        params.push(new Date(endDate).toISOString());
+      }
+      query += ' WHERE ' + whereClause.join(' AND ');
+    }
+
+    query += ' ORDER BY ' + sort + ' ' + order;
+    const users = await pool.query(query, params);
     res.json(users.rows);
   } catch (error) {
     console.error('Get all users info error:', error.message, error.stack);
-    if (error.message === 'Token expired. Please log in again.') {
-      return res.status(401).json({ error: error.message });
-    }
     res.status(500).json({ error: 'Failed to fetch users info', details: error.message });
   }
 };
