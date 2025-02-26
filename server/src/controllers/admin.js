@@ -295,6 +295,7 @@ exports.getUserTokens = async (req, res) => {
 
 exports.airdropTokens = async (req, res) => {
   const { userIds, groupId, amount, mint } = req.body; // Accept userIds or groupId
+  const token = req.headers.authorization?.split(' ')[1];
   try {
     const decoded = verifyToken(token);
     if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
@@ -318,7 +319,7 @@ exports.airdropTokens = async (req, res) => {
     const adminBalance = await connection.getBalance(adminKeypair.publicKey);
     console.log('Admin SOL balance:', adminBalance / 1e9, 'SOL');
     if (adminBalance < 0.01 * targetUserIds.length) {
-      throw new Error('Admin wallet has insufficient SOL to pay fees for all airdrops');
+      throw new Error('Admin wallet has insufficient SOL to pay fees for all transfers');
     }
 
     const adjustedAmount = amount * Math.pow(10, 9);
@@ -354,12 +355,11 @@ exports.airdropTokens = async (req, res) => {
         adjustedAmount
       );
       console.log(`Airdropped ${amount} tokens to user ${userId}, tx:`, tx);
-      console.log(`This action adds ${amount} tokens to the total circulating supply for ${mint}`);
 
       const ataAccount = await getAccount(connection, destinationATA);
       console.log(`User ${userId} ATA balance after airdrop:`, Number(ataAccount.amount) / Math.pow(10, 9));
       successCount++;
-      messages.push(`Airdropped ${amount} tokens to user ${userId} (adds to total circulating supply)`);
+      messages.push(`Airdropped ${amount} tokens to user ${userId}`);
     }
 
     await pool.query(
@@ -469,25 +469,7 @@ exports.getUsers = async (req, res) => {
     const decoded = verifyToken(token);
     if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
 
-    const { sort = 'created_at', order = 'desc', startDate, endDate } = req.query;
-    let query = 'SELECT id, email, wallet FROM users';
-    let params = [];
-    let whereClause = [];
-
-    if (startDate || endDate) {
-      if (startDate) {
-        whereClause.push('created_at >= $' + (params.length + 1));
-        params.push(new Date(startDate).toISOString());
-      }
-      if (endDate) {
-        whereClause.push('created_at <= $' + (params.length + 1));
-        params.push(new Date(endDate).toISOString());
-      }
-      query += ' WHERE ' + whereClause.join(' AND ');
-    }
-
-    query += ' ORDER BY ' + sort + ' ' + order;
-    const result = await pool.query(query, params);
+    const result = await pool.query('SELECT id, email, wallet FROM users');
     res.json(result.rows);
   } catch (error) {
     console.error('Get users error:', error.message, error.stack);
