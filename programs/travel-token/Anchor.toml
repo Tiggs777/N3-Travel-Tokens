@@ -1,0 +1,23 @@
+[toolchain]
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+travel_token = "SoxhWK5z1d7EHvWk3WHqjENBUopRzj4KzzLWXvJ1sXm"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+test = "yarn run mocha -t 1000000 tests/"
+dev = "yarn run ts-node src/index.ts"
+deploy = "yarn run anchor deploy"
+lint = "yarn run eslint . --ext .ts"
+format = "yarn run prettier --write ."
+

@@ -1,0 +1,153 @@
+.admin-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 20px auto;
+  background: #f0f4f8;
+  border-radius: 10px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.admin-container h2 {
+  text-align: center;
+  color: #2c3e50;
+  margin-bottom: 30px;
+  font-size: 28px;
+}
+
+.admin-menu {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.admin-menu button {
+  padding: 10px 20px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+.admin-menu button.active {
+  background: #2980b9;
+}
+
+.admin-menu button:hover {
+  background: #2980b9;
+}
+
+.form-section {
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.form-section h3 {
+  margin-top: 0;
+  color: #2c3e50;
+  font-size: 20px;
+}
+
+.form-section input,
+.form-section select {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  margin: 10px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #f9f9f9;
+}
+
+.form-section button {
+  padding: 10px 20px;
+  background: #00b894;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 10px;
+  transition: background 0.3s;
+}
+
+.form-section button:hover {
+  background: #009875;
+}
+
+.form-section .delete-selected {
+  background: #e74c3c;
+  margin-left: 10px;
+}
+
+.form-section .delete-selected:hover {
+  background: #c0392b;
+}
+
+.create-user, .create-travel {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.user-table, .travel-table, .token-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.user-table th, .user-table td, .travel-table th, .travel-table td, .token-table th, .token-table td {
+  padding: 10px;
+  border: 1px solid #ddd;
+  text-align: left;
+}
+
+.user-table th, .travel-table th, .token-table th {
+  background: #34495e;
+  color: white;
+}
+
+.user-table td input, .user-table td select, .travel-table td input, .token-table td input {
+  width: 100%;
+  padding: 5px;
+  margin: 0;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.user-table button, .travel-table button, .token-table button {
+  padding: 5px 10px;
+  background: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 5px;
+}
+
+.user-table button:hover, .travel-table button:hover, .token-table button:hover {
+  background: #2980b9;
+}
+
+.travel-table .thumbnail {
+  width: 50px;
+  height: 50px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.travel-table .truncate, .token-table .truncate, .user-table .truncate {
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-table .token-balances {
+  max-width: 300px;
+  white-space: nowrap;
+  overflow-x: auto;
+}
