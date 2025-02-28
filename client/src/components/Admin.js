@@ -49,6 +49,14 @@ const Admin = () => {
   const user = tokenAuth ? jwtDecode(tokenAuth) : null;
 
   useEffect(() => {
+    console.log('travelPackageGroups state updated:', travelPackageGroups);
+  }, [travelPackageGroups]);
+
+  useEffect(() => {
+    console.log('userGroups state updated:', userGroups);
+  }, [userGroups]);
+
+  useEffect(() => {
     console.log('Active tab updated:', location.state?.activeMenu);
     if (location.state?.activeMenu) {
       setActiveTab(location.state.activeMenu);
@@ -118,31 +126,52 @@ const Admin = () => {
   };
 
   const fetchUserGroups = async () => {
+  try {
+    console.log('Fetching user groups...');
     const res = await axios.get(process.env.REACT_APP_API_URL + '/api/admin/user-groups', {
       headers: { Authorization: `Bearer ${tokenAuth}` },
     });
-    // Ensure userGroups is an array with proper structure (id, name, user_ids)
-    const groups = res.data || [];
-    setUserGroups(groups.map(group => ({
+    console.log('API response for user groups:', res.data);
+    // Ensure res.data is an array, default to empty if not
+    const groups = Array.isArray(res.data) ? res.data : [];
+    const formattedGroups = groups.map(group => ({
       id: group.id,
       name: group.name,
-      user_ids: group.user_ids || [] // Use user_ids to match server response, default to empty array if undefined
-    })));
-  };
+      user_ids: group.user_ids || [] // Default to empty array if undefined
+    }));
+    console.log('Formatted user groups:', formattedGroups);
+    setUserGroups(formattedGroups);
+  } catch (error) {
+    console.error('Failed to fetch user groups:', error.response?.status, error.response?.data || error.message);
+    setUserGroups([]); // Reset to empty array on error
+  }
+};
 
-  const fetchTravelPackageGroups = async () => {
-    try {
-      const res = await axios.get(process.env.REACT_APP_API_URL + '/api/travel-package-groups', {
-        headers: { Authorization: `Bearer ${tokenAuth}` },
-      });
-      console.log('Fetched travel package groups:', res.data);
-      setTravelPackageGroups(res.data || []); // Ensure travelPackageGroups is an array
-    } catch (error) {
-      console.error('Error fetching travel package groups:', error.response?.status, error.response?.data || error.message);
-      setTravelPackageGroups([]); // Default to empty array on error
-      throw error; // Re-throw to be caught by initializeData
-    }
-  };
+const fetchTravelPackageGroups = async () => {
+  try {
+    console.log('Fetching travel package groups...');
+    const res = await axios.get(process.env.REACT_APP_API_URL + '/api/travel-package-groups', {
+      headers: { Authorization: `Bearer ${tokenAuth}` },
+    });
+    console.log('API response for travel package groups (raw):', res.data);
+    const groups = Array.isArray(res.data) ? res.data.map(group => {
+      const transformedGroup = {
+        id: group.id,
+        name: group.name,
+        packageIds: group.packageids || [], // Correctly rename from packageids to packageIds
+      };
+      console.log('Transformed group:', transformedGroup);
+      return transformedGroup;
+    }) : [];
+    console.log('Setting travelPackageGroups (formatted):', groups);
+    setTravelPackageGroups(groups);
+    return groups;
+  } catch (error) {
+    console.error('Error fetching travel package groups:', error.response?.status, error.response?.data || error.message);
+    setTravelPackageGroups([]);
+    throw error;
+  }
+};
 
   const handleTabChange = (newTab) => {
     console.log('Switching to tab:', newTab);
@@ -1231,45 +1260,68 @@ const Admin = () => {
             </table>
           </div>
         )}
-        {activeTab === 'usersGroups' && (
-          <div className="work-section">
-            <h2>User Groups</h2>
-            <button onClick={handleDeleteMultipleUsers} className="delete-selected">Delete Selected</button>
-            <table className="user-table">
-              <thead>
-                <tr>
-                  <th>Select</th>
-                  <th>Group ID</th>
-                  <th>Name</th>
-                  <th>Members</th>
-                </tr>
-              </thead>
-              <tbody>
-                {userGroups.map(group => (
-                  <tr key={group.id}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedUsers.includes(group.id)}
-                        onChange={() => handleSelectUser(group.id)}
-                      />
-                    </td>
-                    <td>{group.id}</td>
-                    <td>{group.name}</td>
-                    <td className="truncate-users">
-                      {group.user_ids.map(userId => {
-                        const user = users.find(u => u.id === userId);
-                        return user ? (
-                          <span key={user.id} title={`${user.email} (${user.wallet})`}>
-                            {`${user.email.split('@')[0]}... (${user.wallet.slice(0, 8)}...)`}
-                          </span>
-                        ) : 'User not found';
-                      }).join(', ') || 'No members'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {activeTab === 'usersGroups' && (
+  <div className="work-section">
+    <h2>User Groups</h2>
+    <button onClick={handleDeleteMultipleUsers} className="delete-selected">Delete Selected</button>
+    <table className="user-table">
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Group ID</th>
+          <th>Name</th>
+          <th>Members</th>
+        </tr>
+      </thead>
+      <tbody>
+        {(!userGroups || !Array.isArray(userGroups)) ? (
+          <tr>
+            <td colSpan="4">Loading user groups or an error occurred...</td>
+          </tr>
+        ) : userGroups.length === 0 ? (
+          <tr>
+            <td colSpan="4">No user groups found. Create one below.</td>
+          </tr>
+        ) : (
+          userGroups.map(group => (
+            <tr key={group.id}>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selectedUsers.includes(group.id)}
+                  onChange={() => handleSelectUser(group.id)}
+                />
+              </td>
+              <td>{group.id}</td>
+              <td>{group.name}</td>
+              <td className="truncate-users">
+  {(group.user_ids || []).length === 0 ? (
+    'No members'
+  ) : (
+    <>
+      {(group.user_ids || []).map((userId, index) => {
+        const user = users.find(u => u.id === userId);
+        return (
+          <React.Fragment key={userId}>
+            {index > 0 && ', '}
+            {user ? (
+              <span title={`${user.email} (${user.wallet})`}>
+                {`${user.email.split('@')[0]}... (${user.wallet.slice(0, 8)}...)`}
+              </span>
+            ) : (
+              `User ${userId} not found`
+            )}
+          </React.Fragment>
+        );
+      })}
+    </>
+  )}
+</td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
             <div className="crud-controls">
               <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Group Name" className="clean-input" />
               <table className="user-table">
@@ -1547,64 +1599,127 @@ const Admin = () => {
             </div>
           </div>
         )}
-        {activeTab === 'travelPackageGroups' && (
-          <div className="work-section">
-            <h2>Travel Package Groups</h2>
-            <button onClick={handleDeleteMultipleTravel} className="delete-selected">Delete Selected</button>
+       {activeTab === 'travelPackageGroups' && (
+  <div className="work-section">
+    <h2>Travel Package Groups</h2>
+    <button onClick={handleDeleteMultipleTravel} className="delete-selected">Delete Selected</button>
+    <table className="travel-table">
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Group ID</th>
+          <th>Name</th>
+          <th>Packages</th>
+        </tr>
+      </thead>
+      <tbody>
+        {(!travelPackageGroups || !Array.isArray(travelPackageGroups)) ? (
+          <tr>
+            <td colSpan="4">Loading travel package groups or an error occurred...</td>
+          </tr>
+        ) : travelPackageGroups.length === 0 ? (
+          <tr>
+            <td colSpan="4">No travel package groups found. Create one below.</td>
+          </tr>
+        ) : (
+          travelPackageGroups.map(group => (
+            <tr key={group.id}>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selectedPackages.includes(group.id)}
+                  onChange={() => handleSelectPackage(group.id)}
+                />
+              </td>
+              <td>{group.id}</td>
+              <td>{group.name}</td>
+              <td className="truncate-packages">
+  {(() => {
+    console.log('Rendering group in Packages column:', group);
+    console.log('Package IDs in Packages column:', group.packageIds);
+    return (group.packageIds || []).length === 0 ? (
+      'No packages'
+    ) : (
+      <>
+        {(group.packageIds || []).map((pkgId, index) => {
+          const pkg = travelPackages.find(p => p.id === pkgId || p.id === String(pkgId) || p.id === Number(pkgId));
+          console.log(`pkgId: ${pkgId}, found package:`, pkg);
+          return (
+            <React.Fragment key={pkgId}>
+              {index > 0 && ', '}
+              {pkg ? (
+                <span title={`${pkg.name} (Price: ${pkg.price})`}>
+                  {`${pkg.name.slice(0, 15)}... ($${pkg.price})`}
+                </span>
+              ) : (
+                `Package ${pkgId} not found`
+              )}
+            </React.Fragment>
+          );
+        })}
+      </>
+    );
+  })()}
+</td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
+    <div className="crud-controls">
+      <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Group Name" className="clean-input" />
+      <table className="travel-table">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Name</th>
+            <th>Price</th>
+            <th>Thumbnail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {travelPackages.map(pkg => (
+            <tr key={pkg.id}>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={selectedPackages.includes(pkg.id)}
+                  onChange={() => handleSelectPackage(pkg.id)}
+                />
+              </td>
+              <td>{pkg.name}</td>
+              <td>{pkg.price}</td>
+              <td><img src={pkg.image_url} alt={pkg.name} className="thumbnail" /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="button-group">
+        <button onClick={handleCreateTravelPackageGroup} className="clean-button">Create Group</button>
+        <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)} className="clean-select">
+          <option value="">Select Group to Edit/Delete</option>
+          {(travelPackageGroups || []).map(group => (
+            <option key={group.id} value={group.id}>
+              {group.name}
+            </option>
+          ))}
+        </select>
+        {selectedGroup && (
+          <div className="selected-group-details">
+            <h3>Selected Group: {(travelPackageGroups || []).find(g => g.id === parseInt(selectedGroup))?.name || 'No Group Selected'}</h3>
             <table className="travel-table">
               <thead>
                 <tr>
                   <th>Select</th>
-                  <th>Group ID</th>
                   <th>Name</th>
-                  <th>Packages</th>
+                  <th>Price</th>
+                  <th>Thumbnail</th>
                 </tr>
               </thead>
               <tbody>
-                {travelPackageGroups.length === 0 ? (
-                  <tr>
-                    <td colSpan="4">No travel package groups found. Create one below.</td>
-                  </tr>
-                ) : (
-                  travelPackageGroups.map(group => (
-                    <tr key={group.id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selectedPackages.includes(group.id)}
-                          onChange={() => handleSelectPackage(group.id)}
-                        />
-                      </td>
-                      <td>{group.id}</td>
-                      <td>{group.name}</td>
-                      <td className="truncate-packages">
-                        {group.packageIds.map(pkgId => {
-                          const pkg = travelPackages.find(p => p.id === pkgId);
-                          return pkg ? (
-                            <span key={pkg.id} title={`${pkg.name} (Price: ${pkg.price})`}>
-                              {`${pkg.name.slice(0, 15)}... ($${pkg.price})`}
-                            </span>
-                          ) : 'Package not found';
-                        }).join(', ') || 'No packages'}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            <div className="crud-controls">
-              <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="Group Name" className="clean-input" />
-              <table className="travel-table">
-                <thead>
-                  <tr>
-                    <th>Select</th>
-                    <th>Name</th>
-                    <th>Price</th>
-                    <th>Thumbnail</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {travelPackages.map(pkg => (
+                {((travelPackageGroups || []).find(g => g.id === parseInt(selectedGroup))?.packageIds || []).map(pkgId => {
+                  const pkg = travelPackages.find(p => p.id === pkgId);
+                  return pkg ? (
                     <tr key={pkg.id}>
                       <td>
                         <input
@@ -1617,62 +1732,21 @@ const Admin = () => {
                       <td>{pkg.price}</td>
                       <td><img src={pkg.image_url} alt={pkg.name} className="thumbnail" /></td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="button-group">
-                <button onClick={handleCreateTravelPackageGroup} className="clean-button">Create Group</button>
-                <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)} className="clean-select">
-                  <option value="">Select Group to Edit/Delete</option>
-                  {travelPackageGroups.map(group => (
-                    <option key={group.id} value={group.id}>
-                      {group.name}
-                    </option>
-                  ))}
-                </select>
-                {selectedGroup && (
-                  <div className="selected-group-details">
-                    <h3>Selected Group: {travelPackageGroups.find(g => g.id === parseInt(selectedGroup))?.name || 'No Group Selected'}</h3>
-                    <table className="travel-table">
-                      <thead>
-                        <tr>
-                          <th>Select</th>
-                          <th>Name</th>
-                          <th>Price</th>
-                          <th>Thumbnail</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(travelPackageGroups.find(g => g.id === parseInt(selectedGroup))?.packageIds || []).map(pkgId => {
-                          const pkg = travelPackages.find(p => p.id === pkgId);
-                          return pkg ? (
-                            <tr key={pkg.id}>
-                              <td>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedPackages.includes(pkg.id)}
-                                  onChange={() => handleSelectPackage(pkg.id)}
-                                />
-                              </td>
-                              <td>{pkg.name}</td>
-                              <td>{pkg.price}</td>
-                              <td><img src={pkg.image_url} alt={pkg.name} className="thumbnail" /></td>
-                            </tr>
-                          ) : null;
-                        })}
-                      </tbody>
-                    </table>
-                    <div className="button-group">
-                      <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="New Group Name" className="clean-input" />
-                      <button onClick={handleUpdateTravelPackageGroup} className="clean-button">Update Group</button>
-                      <button onClick={handleDeleteTravelPackageGroup} className="clean-button delete">Delete Group</button>
-                    </div>
-                  </div>
-                )}
-              </div>
+                  ) : null;
+                })}
+              </tbody>
+            </table>
+            <div className="button-group">
+              <input value={groupName} onChange={(e) => setGroupName(e.target.value)} placeholder="New Group Name" className="clean-input" />
+              <button onClick={handleUpdateTravelPackageGroup} className="clean-button">Update Group</button>
+              <button onClick={handleDeleteTravelPackageGroup} className="clean-button delete">Delete Group</button>
             </div>
           </div>
         )}
+      </div>
+    </div>
+  </div>
+)}
       </div>
     </div>
   );
