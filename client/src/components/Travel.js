@@ -1,69 +1,67 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { useWallet } from '@solana/wallet-adapter-react';
+import Modal from './Modal';
 import './Travel.css';
 
 const Travel = () => {
   const [packages, setPackages] = useState([]);
-  const [error, setError] = useState(null);
   const [selectedPackage, setSelectedPackage] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { publicKey } = useWallet();
 
   useEffect(() => {
-    const fetchPackages = async () => {
-      try {
-        const res = await axios.get('http://localhost:3000/api/travel');
-        setPackages(res.data);
-        setError(null);
-      } catch (error) {
-        console.error('Error fetching travel packages:', error);
-        setError(error.response ? error.response.status : 'Network Error');
-      }
-    };
-    fetchPackages();
+    axios.get(process.env.REACT_APP_API_URL+'/api/travel')
+      .then(res => setPackages(res.data))
+      .catch(err => console.error('Error fetching packages:', err));
   }, []);
 
-  const handleSelect = (pkg) => {
+  const handleBuy = (pkg) => {
     setSelectedPackage(pkg);
+    setIsModalOpen(true);
+  };
+
+  const confirmPurchase = async () => {
+    if (!publicKey) return alert('Connect your wallet to buy');
+    try {
+      const res = await axios.post(process.env.REACT_APP_API_URL+'/api/travel/purchase', {
+        packageId: selectedPackage.id,
+        amount: selectedPackage.price,
+        buyer: publicKey.toBase58(),
+      }, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+      alert('Purchase successful! Tx: ' + res.data.signature);
+      setIsModalOpen(false);
+    } catch (error) {
+      alert('Purchase failed: ' + error.message);
+    }
   };
 
   return (
     <div className="travel-container">
+      <div className="hero-section">
+        <h1>Explore with N3 Travel Tokens</h1>
+      </div>
       <h2>Travel Packages</h2>
-      {error ? (
-        <p>Error: {error === 404 ? 'Travel packages endpoint not found (404)' : 'Failed to load packages'}</p>
-      ) : packages.length === 0 ? (
-        <p>No travel packages available</p>
-      ) : (
-        <>
-          {selectedPackage && (
-            <div className="selected-package">
-              <div className="package-tile selected">
-                <img src={selectedPackage.image_url} alt={selectedPackage.name} className="package-image" />
-                <h3>{selectedPackage.name}</h3>
-                <p>Price: {selectedPackage.price} Tokens</p>
-                <p>{selectedPackage.description}</p>
-                <button>Buy</button>
-              </div>
-            </div>
-          )}
-          <div className="package-tiles">
-            {packages.map(pkg => (
-              <div
-                key={pkg.id}
-                className={`package-tile ${selectedPackage?.id === pkg.id ? 'selected' : ''}`}
-                onClick={() => handleSelect(pkg)}
-              >
-                <img src={pkg.image_url} alt={pkg.name} className="package-image" />
-                <h3>{pkg.name}</h3>
-                <p>Price: {pkg.price} Tokens</p>
-                <p>{pkg.description}</p>
-                <button>Buy</button>
-              </div>
-            ))}
+      <div className="package-tiles">
+        {packages.map(pkg => (
+          <div key={pkg.id} className="package-tile">
+            <img src={pkg.image_url} alt={pkg.name} className="package-image" />
+            <h3>{pkg.name}</h3>
+            <p>Price: {pkg.price} Tokens</p>
+            <button onClick={() => handleBuy(pkg)}>Buy</button>
           </div>
-        </>
-      )}
+        ))}
+      </div>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Confirm Purchase">
+        {selectedPackage && (
+          <div>
+            <p>Buy {selectedPackage.name} for {selectedPackage.price} Tokens?</p>
+            <button onClick={confirmPurchase}>Confirm</button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };
-
+console.log('API URL:', process.env.REACT_APP_API_URL);
 export default Travel;

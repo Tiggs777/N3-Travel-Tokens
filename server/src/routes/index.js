@@ -34,5 +34,9 @@ router.post('/admin/user-groups/create', admin.createUserGroup); // New
 router.get('/admin/user-groups', admin.getUserGroups); // New
 router.post('/admin/user-groups/update', admin.updateUserGroup); // New
 router.post('/admin/user-groups/delete', admin.deleteUserGroup); // New
+router.get('/travel-package-groups', admin.getTravelPackageGroups);
+router.post('/travel-package-groups/create', admin.createTravelPackageGroup);
+router.post('/travel-package-groups/update', admin.updateTravelPackageGroup);
+router.post('/travel-package-groups/delete', admin.deleteTravelPackageGroup);
 
 module.exports = router;

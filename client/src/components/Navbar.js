@@ -14,20 +14,21 @@ const Navbar = () => {
   };
 
   const handleAdminMenu = (menu) => {
-    navigate('/admin', { state: { activeMenu: menu } });
+    if (user && user.role === 'admin') {
+      navigate('/admin', { state: { activeMenu: menu === 'travelPackage' ? 'travelPackageCrud' : menu } });
+    }
   };
 
   return (
     <nav className="navbar">
       <div className="navbar-left">
         <Link to="/" className="navbar-link">Travel Packages</Link>
-        {user && <Link to="/wallet" className="navbar-link">Wallet</Link>}
+        {user && <Link to="/wallet" className="navbar-link">Wallet Manager</Link>}
         {user && user.role === 'admin' && (
           <>
             <button onClick={() => handleAdminMenu('tokens')} className="navbar-link">Token Management</button>
-            <button onClick={() => handleAdminMenu('airdrop')} className="navbar-link">Airdrop Tokens</button>
             <button onClick={() => handleAdminMenu('users')} className="navbar-link">User Management</button>
-            <button onClick={() => handleAdminMenu('travel')} className="navbar-link">Travel Packages</button>
+            <button onClick={() => handleAdminMenu('travelPackage')} className="navbar-link">Travel Package Management</button>
           </>
         )}
       </div>
@@ -40,7 +41,7 @@ const Navbar = () => {
           </>
         ) : (
           <>
-            <span className="navbar-user">Welcome, {user.role === 'admin' ? 'Admin' : 'User'}</span>
+            <span className="navbar-user">Welcome, Admin</span>
             <button onClick={handleLogout} className="navbar-button logout">Logout</button>
           </>
         )}

@@ -5,7 +5,7 @@ require('dotenv').config();
 
 const app = express();
 
-app.use(cors({ origin: 'http://localhost:3001' }));
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // Log all incoming requests

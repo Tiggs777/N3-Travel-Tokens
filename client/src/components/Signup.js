@@ -10,7 +10,7 @@ const Signup = () => {
 
   const handleSignup = async () => {
     try {
-      const res = await axios.post('http://localhost:3000/api/signup', { email, password });
+      const res = await axios.post(process.env.REACT_APP_API_URL+'/api/signup', { email, password });
       localStorage.setItem('token', res.data.token);
       navigate('/wallet');
     } catch (error) {

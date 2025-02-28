@@ -1,5 +1,3 @@
-/* client/src/components/Admin.css */
-
 .admin-container {
   padding: 20px;
   max-width: 1200px;
@@ -27,44 +25,19 @@
   margin: 0;
 }
 
-.token-actions-nav {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.token-action-dropdown {
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-  background: #ffffff;
-}
-
-.action-button {
-  padding: 8px 16px;
-  background: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-.action-button:hover {
-  background: #0056b3;
-}
-
 .admin-tabs {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 5px;
+  margin-bottom: 10px;
   border-bottom: 2px solid #dee2e6;
+  background: #f0f4f8;
+  padding: 10px 0;
 }
 
 .tab {
-  padding: 10px 20px;
+  padding: 8px 16px;
   background: #e9ecef;
   color: #495057;
   border: none;
@@ -72,167 +45,163 @@
   cursor: pointer;
   transition: background 0.3s, color 0.3s;
   border-bottom: 2px solid transparent;
+  font-size: 14px;
+  margin: 2px;
 }
 
 .tab.active {
   background: #ffffff;
-  color: #007bff;
-  border-bottom: 2px solid #007bff;
+  color: #3498db;
+  border-bottom: 2px solid #3498db;
 }
 
 .tab:hover {
   background: #dee2e6;
-  color: #007bff;
+  color: #3498db;
 }
 
-.admin-content {
-  display: grid;
-  gap: 20px;
-}
-
-.form-section {
+.admin-work-area {
   padding: 20px;
-  background: #f8f9fa;
+  background: #ffffff;
   border-radius: 8px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
-.form-section h2 {
-  color: #2c3e50;
-  font-size: 22px;
-  margin-bottom: 15px;
-}
-
-.form-section h3 {
-  color: #495057;
-  font-size: 18px;
-  margin-top: 15px;
-  margin-bottom: 10px;
-}
-
-.token-form, .user-management, .user-groups, .travel-packages {
+.work-section {
   display: flex;
   flex-direction: column;
-  gap: 15px;
+  gap: 20px;
 }
 
-.user-filters {
-  display: flex;
-  gap: 10px;
+.work-section h2 {
+  color: #2c3e50;
+  font-size: 24px;
   margin-bottom: 15px;
-  flex-wrap: wrap;
 }
 
-.user-filters select, .user-filters input[type="date"], .user-filters button {
-  padding: 8px 12px;
+.work-section input, .work-section select {
+  padding: 12px;
   border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.user-filters button {
-  background: #007bff;
-  color: white;
-  border: none;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-.user-filters button:hover {
-  background: #0056b3;
-}
-
-input, select {
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 14px;
+  border-radius: 6px;
+  font-size: 16px;
   background: #ffffff;
+  width: 100%;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-button {
-  padding: 10px 20px;
-  background: #007bff;
+.work-section button {
+  padding: 12px 24px;
+  background: #3498db;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.3s;
+  transition: background 0.3s, transform 0.2s;
+  width: 100%;
+  margin-top: 10px;
+  font-size: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-button:hover {
-  background: #0056b3;
+.work-section button:hover {
+  background: #2980b9;
+  transform: translateY(-2px);
 }
 
 .delete-selected {
   background: #dc3545;
+  width: auto;
+  margin-bottom: 15px;
+  padding: 10px 20px;
+  font-size: 16px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .delete-selected:hover {
   background: #c82333;
 }
 
-.create-user, .create-travel {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.user-table, .travel-table, .token-table {
+/* Table styles for Users, Tokens, and Travel Packages */
+.user-table, .token-table, .travel-table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 15px;
   background: #ffffff;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.05);
 }
 
-.user-table th, .user-table td, .travel-table th, .travel-table td, .token-table th, .token-table td {
-  padding: 12px;
+.user-table th, .token-table th, .travel-table th,
+.user-table td, .token-table td, .travel-table td {
+  padding: 14px;
   border: 1px solid #dee2e6;
   text-align: left;
-  font-size: 14px;
+  font-size: 16px;
 }
 
-.user-table th, .travel-table th, .token-table th {
-  background: #007bff;
+.user-table th, .token-table th, .travel-table th {
+  background: #3498db;
   color: white;
   font-weight: bold;
 }
 
-.user-table td input, .user-table td select, .travel-table td input, .token-table td input {
+.user-table td input, .token-table td input, .travel-table td input,
+.user-table td select, .token-table td select, .travel-table td select {
   width: 100%;
-  padding: 8px;
+  padding: 10px;
   border: 1px solid #ccc;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
-.user-table button, .travel-table button, .token-table button {
-  padding: 8px 16px;
-  background: #007bff;
+.user-table button, .token-table button, .travel-table button {
+  padding: 10px 16px;
+  background: #3498db;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
   margin-right: 5px;
+  font-size: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-.user-table button:hover, .travel-table button:hover, .token-table button:hover {
-  background: #0056b3;
+.user-table button:hover, .token-table button:hover, .travel-table button:hover {
+  background: #2980b9;
 }
 
-.travel-table .thumbnail {
+.thumbnail {
   width: 50px;
   height: 50px;
   object-fit: cover;
   border-radius: 4px;
+  border: 1px solid #ddd;
 }
 
-.travel-table .truncate, .token-table .truncate, .user-table .truncate {
+.truncate, .truncate-users, .truncate-packages {
   max-width: 200px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.truncate-users span, .truncate-packages span {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.truncate-users span:hover::after, .truncate-packages span:hover::after {
+  content: attr(title);
+  position: absolute;
+  background: #333;
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+  z-index: 1000;
+  white-space: normal;
+  max-width: 300px;
 }
 
 .user-table .token-balances {
@@ -241,27 +210,86 @@ button:hover {
   overflow-x: auto;
 }
 
-.user-selection {
-  max-height: 200px;
-  overflow-y: auto;
-  margin: 10px 0;
-  padding: 10px;
+.crud-controls, .group-actions {
+  margin-bottom: 15px;
+}
+
+.user-filters, .create-user-form, .user-selection-area, .create-token-form, .create-travel-form {
+  display: flex;
+  gap: 15px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.user-filters select, .user-filters input, .create-user-form input, .create-user-form select, .user-selection-area select,
+.create-token-form input, .create-travel-form input {
+  flex: 1;
+  min-width: 150px;
+  max-width: 250px;
+}
+
+.create-user-form button, .user-selection-area button, .create-token-form button, .create-travel-form button {
+  flex: 1;
+  min-width: 150px;
+  max-width: 200px;
+}
+
+.clean-input {
+  padding: 12px;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  border-radius: 6px;
+  font-size: 16px;
+  background: #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.clean-select, .clean-button {
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 16px;
+  background: #ffffff;
+  color: #495057;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: background 0.3s, color 0.3s;
+}
+
+.clean-button {
+  background: #3498db;
+  color: white;
+  border: none;
+}
+
+.clean-button:hover {
+  background: #2980b9;
+}
+
+.clean-button.delete {
+  background: #dc3545;
+}
+
+.clean-button.delete:hover {
+  background: #c82333;
+}
+
+.button-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.selected-group-details {
+  margin-top: 15px;
+  padding: 15px;
   background: #f8f9fa;
+  border-radius: 8px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
-.user-selection label {
-  display: block;
-  margin: 5px 0;
-  padding: 5px;
-  border-bottom: 1px solid #eee;
-}
-
-.user-selection label:last-child {
-  border-bottom: none;
-}
-
-.group-selection {
-  margin: 10px 0;
+.selected-group-details h3 {
+  color: #2c3e50;
+  font-size: 20px;
+  margin-bottom: 10px;
 }

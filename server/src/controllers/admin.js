@@ -722,3 +722,96 @@ exports.getAllUsersInfo = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch users info', details: error.message });
   }
 };
+
+exports.getTravelPackageGroups = async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    const groups = await pool.query(`
+      SELECT tpg.id, tpg.name, json_agg(tp.id) as packageIds
+      FROM travel_package_groups tpg
+      LEFT JOIN travel_package_group_members tpgm ON tpg.id = tpgm.group_id
+      LEFT JOIN travel_packages tp ON tpgm.package_id = tp.id
+      GROUP BY tpg.id, tpg.name
+    `);
+    res.json(groups.rows);
+  } catch (error) {
+    console.error('Get travel package groups error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to fetch travel package groups', details: error.message });
+  }
+};
+
+// Create a new travel package group
+exports.createTravelPackageGroup = async (req, res) => {
+  const { name, packageIds } = req.body;
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    const result = await pool.query(
+      'INSERT INTO travel_package_groups (name) VALUES ($1) RETURNING id',
+      [name]
+    );
+    const groupId = result.rows[0].id;
+
+    if (packageIds && packageIds.length > 0) {
+      const values = packageIds.map(packageId => `(${groupId}, ${packageId})`).join(', ');
+      await pool.query(
+        `INSERT INTO travel_package_group_members (group_id, package_id) VALUES ${values}`
+      );
+    }
+
+    res.json({ success: true, message: `Travel package group ${name} created`, id: groupId });
+  } catch (error) {
+    console.error('Create travel package group error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to create travel package group', details: error.message });
+  }
+};
+
+// Update a travel package group
+exports.updateTravelPackageGroup = async (req, res) => {
+  const { groupId, name, packageIds } = req.body;
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    await pool.query('UPDATE travel_package_groups SET name = $1 WHERE id = $2', [name, groupId]);
+
+    // Clear existing members
+    await pool.query('DELETE FROM travel_package_group_members WHERE group_id = $1', [groupId]);
+
+    // Add new members
+    if (packageIds && packageIds.length > 0) {
+      const values = packageIds.map(packageId => `(${groupId}, ${packageId})`).join(', ');
+      await pool.query(
+        `INSERT INTO travel_package_group_members (group_id, package_id) VALUES ${values}`
+      );
+    }
+
+    res.json({ success: true, message: `Travel package group ${name} updated` });
+  } catch (error) {
+    console.error('Update travel package group error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to update travel package group', details: error.message });
+  }
+};
+
+// Delete a travel package group
+exports.deleteTravelPackageGroup = async (req, res) => {
+  const { groupId } = req.body;
+  const token = req.headers.authorization?.split(' ')[1];
+  try {
+    const decoded = verifyToken(token);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+
+    await pool.query('DELETE FROM travel_package_group_members WHERE group_id = $1', [groupId]);
+    await pool.query('DELETE FROM travel_package_groups WHERE id = $1', [groupId]);
+    res.json({ success: true, message: 'Travel package group deleted' });
+  } catch (error) {
+    console.error('Delete travel package group error:', error.message, error.stack);
+    res.status(500).json({ error: 'Failed to delete travel package group', details: error.message });
+  }
+};

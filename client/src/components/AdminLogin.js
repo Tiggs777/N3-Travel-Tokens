@@ -11,7 +11,7 @@ const AdminLogin = () => {
 
   const handleLogin = async () => {
     try {
-      const res = await axios.post('http://localhost:3000/api/admin/login', { email, password });
+      const res = await axios.post(process.env.REACT_APP_API_URL+'/api/admin/login', { email, password });
       localStorage.setItem('token', res.data.token);
       navigate('/admin');
     } catch (error) {

@@ -21,7 +21,7 @@ const AdminTokens = () => {
       navigate('/');
       return;
     }
-    axios.get('http://localhost:3000/api/admin/tokens', {
+    axios.get(process.env.REACT_APP_API_URL+'/api/admin/tokens', {
       headers: { Authorization: `Bearer ${token}` },
     }).then(res => setTokens(res.data)).catch(err => {
       if (err.response?.status === 401) {
@@ -37,7 +37,7 @@ const AdminTokens = () => {
   const handleCreateToken = async () => {
     if (!tokenName || !tokenSupply || !tokenImage || !tokenDesc || !tokenTicker) return alert('Please fill in all token fields');
     try {
-      const res = await axios.post('http://localhost:3000/api/admin/token', {
+      const res = await axios.post(process.env.REACT_APP_API_URL+'/api/admin/token', {
         name: tokenName,
         supply: parseInt(tokenSupply),
         image_url: tokenImage,
@@ -46,7 +46,7 @@ const AdminTokens = () => {
       }, { headers: { Authorization: `Bearer ${token}` } });
       alert(`Token created! Mint: ${res.data.mint}`);
       setTokenName(''); setTokenSupply(''); setTokenImage(''); setTokenDesc(''); setTokenTicker('');
-      const updatedTokens = await axios.get('http://localhost:3000/api/admin/tokens', {
+      const updatedTokens = await axios.get(process.env.REACT_APP_API_URL+'/api/admin/tokens', {
         headers: { Authorization: `Bearer ${token}` },
       });
       setTokens(updatedTokens.data);
