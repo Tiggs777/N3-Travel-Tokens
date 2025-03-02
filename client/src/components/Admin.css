@@ -109,18 +109,21 @@
 }
 
 .delete-selected {
-  background: #dc3545;
-  width: auto;
-  margin-bottom: 15px;
-  padding: 10px 20px;
-  font-size: 16px;
+  background: #dc3545; /* Red */
+  color: white;
+  padding: 8px 16px; /* Smaller padding */
+  width: auto; /* Remove full width */
+  font-size: 14px; /* Smaller text */
   border-radius: 6px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  margin-bottom: 15px;
 }
 
 .delete-selected:hover {
-  background: #c82333;
+  background: #c82333; /* Darker red on hover */
 }
+
 
 /* Table styles for Users, Tokens, and Travel Packages */
 .user-table, .token-table, .travel-table {
@@ -266,12 +269,20 @@
 }
 
 .clean-button.delete {
-  background: #dc3545;
+  background: #dc3545; /* Red */
+  color: white;
+  padding: 8px 16px; /* Smaller padding */
+  width: auto; /* Remove full width */
+  font-size: 14px; /* Smaller text */
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
 }
 
 .clean-button.delete:hover {
-  background: #c82333;
+  background: #c82333; /* Darker red on hover */
 }
+
 
 .button-group {
   display: flex;

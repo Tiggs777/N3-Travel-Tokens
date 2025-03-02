@@ -1,52 +1,97 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import axios from 'axios';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { getAssociatedTokenAddress, getAccount } from '@solana/spl-token';
+import Modal from './Modal';
 import './Wallet.css';
 
+// WebWalletTile Component
+const WebWalletTile = ({ publicKey, webBalance, viewAddress }) => (
+  <div className="wallet-tile">
+    <h3>Web Wallet</h3>
+    <div style={{ marginBottom: '15px' }}>
+      <WalletMultiButton />
+    </div>
+    {publicKey ? (
+      <>
+        <p><strong>Address:</strong> <button onClick={() => viewAddress(publicKey.toBase58())}>View Address</button></p>
+        <p><strong>Balance:</strong> {webBalance} SOL</p>
+      </>
+    ) : (
+      <p>Not connected</p>
+    )}
+  </div>
+);
+
+// OnsiteWalletTile Component
+const OnsiteWalletTile = ({ onsiteWallet, onsiteBalance, tokenBalances, fetchPrivateKey, mergeWithWebWallet, viewAddress }) => (
+  <div className="wallet-tile">
+    <h3>Onsite Wallet</h3>
+    {onsiteWallet ? (
+      <>
+        <p><strong>Address:</strong> <button onClick={() => viewAddress(onsiteWallet)}>View Address</button></p>
+        <p><strong>Balance:</strong> {onsiteBalance} SOL</p>
+        {tokenBalances.length > 0 ? (
+          tokenBalances.map((token, index) => (
+            <p key={index}>
+              <strong>{token.name} ({token.ticker}):</strong> {token.balance} tokens
+            </p>
+          ))
+        ) : (
+          <p>No airdropped tokens</p>
+        )}
+        <button onClick={fetchPrivateKey}>View Private Key</button>
+        <button onClick={mergeWithWebWallet}>Merge with Web Wallet</button>
+      </>
+    ) : (
+      <p>Loading wallet...</p>
+    )}
+  </div>
+);
+
+// SystemWalletTile Component
+const SystemWalletTile = ({ systemWalletPubKey, systemBalance, viewAddress }) => (
+  <div className="wallet-tile">
+    <h3>System Wallet</h3>
+    {systemWalletPubKey ? (
+      <>
+        <p><strong>Address:</strong> <button onClick={() => viewAddress(systemWalletPubKey)}>View Address</button></p>
+        <p><strong>Balance:</strong> {systemBalance ?? 'Loading...'} SOL</p>
+      </>
+    ) : (
+      <p>Loading system wallet...</p>
+    )}
+  </div>
+);
+
+// Main Wallet Component
 const Wallet = () => {
   const { publicKey, connected } = useWallet();
-  const [onsiteWallet, setOnsiteWallet] = useState(null);
-  const [onsiteBalance, setOnsiteBalance] = useState(0);
-  const [webBalance, setWebBalance] = useState(0);
-  const [tokenBalances, setTokenBalances] = useState([]);
-  const [systemWalletPubKey, setSystemWalletPubKey] = useState(null);
-  const [systemBalance, setSystemBalance] = useState(null);
-  const [showAddressModal, setShowAddressModal] = useState(false);
-  const [showPrivateKeyModal, setShowPrivateKeyModal] = useState(false);
-  const [privateKey, setPrivateKey] = useState(null);
-
-  const connection = new Connection('https://api.devnet.solana.com');
+  const connection = useMemo(() => new Connection('https://api.devnet.solana.com'), []);
   const token = localStorage.getItem('token');
   const isAdmin = token ? JSON.parse(atob(token.split('.')[1])).role === 'admin' : false;
 
-  useEffect(() => {
-    if (isAdmin) {
-      const fetchSystemWallet = async () => {
-        try {
-          const pubKeyRes = await axios.get(process.env.REACT_APP_API_URL + '/api/system/wallet/publickey', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          setSystemWalletPubKey(pubKeyRes.data.publicKey);
-
-          const balanceRes = await axios.get(process.env.REACT_APP_API_URL + '/api/system/wallet/balance', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          setSystemBalance(balanceRes.data.balance);
-        } catch (error) {
-          console.error('Error fetching system wallet info:', error.message);
-        }
-      };
-      fetchSystemWallet();
-    }
-  }, [isAdmin, token]);
+  const [onsiteWallet, setOnsiteWallet] = useState(null);
+  const [onsiteBalance, setOnsiteBalance] = useState(0);
+  const [webBalance, setWebBalance] = useState(0);
+  const [systemWalletPubKey, setSystemWalletPubKey] = useState(null);
+  const [systemBalance, setSystemBalance] = useState(null);
+  const [tokenBalances, setTokenBalances] = useState([]);
+  const [activeWalletTab, setActiveWalletTab] = useState('web');
+  const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [showPrivateKeyModal, setShowPrivateKeyModal] = useState(false);
+  const [privateKey, setPrivateKey] = useState(null);
+  const [selectedAddress, setSelectedAddress] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    if (!token) return; // Only fetch if logged in
+    if (!token) return;
 
     const fetchWallet = async () => {
+      setIsLoading(true);
       try {
         const res = await axios.get(process.env.REACT_APP_API_URL + '/api/wallet', {
           headers: { Authorization: `Bearer ${token}` },
@@ -84,29 +129,63 @@ const Wallet = () => {
           localStorage.removeItem('token');
           window.location.href = '/';
         }
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchWallet();
-  }, [token, isAdmin]);
+  }, [token, isAdmin, connection]);
 
   useEffect(() => {
     if (connected && publicKey) {
       const fetchWebBalance = async () => {
-        const balance = await connection.getBalance(publicKey);
-        setWebBalance(balance / 1e9);
+        try {
+          const balance = await connection.getBalance(publicKey);
+          setWebBalance(balance / 1e9);
+        } catch (error) {
+          console.error('Error fetching web wallet balance:', error.message);
+          alert('Failed to fetch web wallet balance.');
+        }
       };
       fetchWebBalance();
     }
-  }, [connected, publicKey]);
+  }, [connected, publicKey, connection]);
 
-  const mergeWithWebWallet = async () => {
+  useEffect(() => {
+    if (isAdmin && token) {
+      const fetchSystemWallet = async () => {
+        try {
+          const pubKeyRes = await axios.get(process.env.REACT_APP_API_URL + '/api/system/wallet/publickey', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setSystemWalletPubKey(pubKeyRes.data.publicKey);
+
+          const balanceRes = await axios.get(process.env.REACT_APP_API_URL + '/api/system/wallet/balance', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          setSystemBalance(balanceRes.data.balance);
+        } catch (error) {
+          console.error('Error fetching system wallet info:', error.message);
+        }
+      };
+      fetchSystemWallet();
+    }
+  }, [isAdmin, token]);
+
+  const mergeWithWebWallet = () => {
     if (!publicKey) return alert('Please connect a web wallet');
     if (!onsiteWallet) return alert('No onsite wallet available');
+    setIsMergeModalOpen(true);
+  };
+
+  const confirmMerge = async () => {
     alert('Merging wallets (logic TBD): Web: ' + publicKey.toBase58() + ', Onsite: ' + onsiteWallet);
+    setIsMergeModalOpen(false);
   };
 
   const fetchPrivateKey = async () => {
     if (!onsiteWallet) return alert('No onsite wallet available');
+    if (!isAdmin) return alert('Unauthorized access');
     try {
       const res = await axios.get(process.env.REACT_APP_API_URL + '/api/wallet/private', {
         headers: { Authorization: `Bearer ${token}` },
@@ -118,63 +197,84 @@ const Wallet = () => {
     }
   };
 
+  const viewAddress = (address) => {
+    setSelectedAddress(address);
+    setShowAddressModal(true);
+  };
+
   return (
     <div className="wallet-container">
       <h2>Wallet Management</h2>
+      
+      <div className="wallet-tabs">
+        <button
+          className={activeWalletTab === 'web' ? 'tab active' : 'tab'}
+          onClick={() => setActiveWalletTab('web')}
+        >
+          Web Wallet
+        </button>
+        <button
+          className={activeWalletTab === 'onsite' ? 'tab active' : 'tab'}
+          onClick={() => setActiveWalletTab('onsite')}
+        >
+          Onsite Wallet
+        </button>
+        {isAdmin && (
+          <button
+            className={activeWalletTab === 'system' ? 'tab active' : 'tab'}
+            onClick={() => setActiveWalletTab('system')}
+          >
+            System Wallet
+          </button>
+        )}
+        <button
+          className={activeWalletTab === 'all' ? 'tab active' : 'tab'}
+          onClick={() => setActiveWalletTab('all')}
+        >
+          All Wallets
+        </button>
+      </div>
+
       <div className="wallet-tiles">
-        <div className="wallet-tile">
-          <h3>Web Wallet</h3>
-          <WalletMultiButton />
-          {publicKey ? (
-            <>
-              <p><strong>Address:</strong> <button onClick={() => setShowAddressModal(true)}>View Address</button></p>
-              <p><strong>Balance:</strong> {webBalance} SOL</p>
-              <p><strong>Tokens:</strong> TBD</p>
-            </>
-          ) : (
-            <p>Not connected</p>
-          )}
-        </div>
-        <div className="wallet-tile">
-          <h3>Onsite Wallet</h3>
-          {onsiteWallet ? (
-            <>
-              <p><strong>Address:</strong> <button onClick={() => setShowAddressModal(true)}>View Address</button></p>
-              {isAdmin && <p><strong>Balance:</strong> {onsiteBalance} SOL</p>}
-              {tokenBalances.length > 0 ? (
-                tokenBalances.map((token, index) => (
-                  <p key={index}>
-                    <strong>{token.name} ({token.ticker}):</strong> {token.balance} tokens
-                  </p>
-                ))
-              ) : (
-                <p>No airdropped tokens</p>
-              )}
-              <button onClick={fetchPrivateKey}>View Private Key</button>
-              <button onClick={mergeWithWebWallet}>Merge with Web Wallet</button>
-            </>
-          ) : (
-            <p>Loading wallet...</p>
-          )}
-        </div>
-        {isAdmin && systemWalletPubKey && (
-          <div className="wallet-tile">
-            <h3>System Wallet</h3>
-            <p><strong>Address:</strong> <button onClick={() => setShowAddressModal(true)}>View Address</button></p>
-            {systemBalance !== null ? (
-              <p><strong>Balance:</strong> {systemBalance} SOL</p>
-            ) : (
-              <p>Fetching balance...</p>
-            )}
-          </div>
+        {(activeWalletTab === 'web' || activeWalletTab === 'all') && (
+          <WebWalletTile publicKey={publicKey} webBalance={webBalance} viewAddress={viewAddress} />
+        )}
+        {(activeWalletTab === 'onsite' || activeWalletTab === 'all') && (
+          <OnsiteWalletTile
+            onsiteWallet={onsiteWallet}
+            onsiteBalance={onsiteBalance}
+            tokenBalances={tokenBalances}
+            fetchPrivateKey={fetchPrivateKey}
+            mergeWithWebWallet={mergeWithWebWallet}
+            viewAddress={viewAddress}
+          />
+        )}
+        {isAdmin && (activeWalletTab === 'system' || activeWalletTab === 'all') && (
+          <SystemWalletTile
+            systemWalletPubKey={systemWalletPubKey}
+            systemBalance={systemBalance}
+            viewAddress={viewAddress}
+          />
         )}
       </div>
+
+      <Modal isOpen={isMergeModalOpen} onClose={() => setIsMergeModalOpen(false)} title="Merge Wallets">
+        <div className="modal-content">
+          <p>Are you sure you want to merge your onsite wallet with your web wallet?</p>
+          <p><strong>Web Wallet:</strong> {publicKey?.toBase58()}</p>
+          <p><strong>Onsite Wallet:</strong> {onsiteWallet}</p>
+          <div className="modal-actions">
+            <button onClick={confirmMerge}>Confirm Merge</button>
+            <button onClick={() => setIsMergeModalOpen(false)}>Cancel</button>
+          </div>
+        </div>
+      </Modal>
 
       {showAddressModal && (
         <div className="modal">
           <div className="modal-content">
             <h3>Wallet Address</h3>
-            <p>{publicKey ? publicKey.toBase58() : onsiteWallet || systemWalletPubKey}</p>
+            <p>{selectedAddress}</p>
             <button onClick={() => setShowAddressModal(false)}>Close</button>
           </div>
         </div>

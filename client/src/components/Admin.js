@@ -3,6 +3,7 @@ import axios from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import { useNavigate, useLocation } from 'react-router-dom';
 import './Admin.css';
+import Modal from './Modal';
 
 const Admin = () => {
   const location = useLocation();
@@ -44,6 +45,8 @@ const Admin = () => {
   const [endDate, setEndDate] = useState('');
   const [isInitialized, setIsInitialized] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteAction, setDeleteAction] = useState(null); // Store the delete function t
 
   const tokenAuth = localStorage.getItem('token');
   const user = tokenAuth ? jwtDecode(tokenAuth) : null;
@@ -73,6 +76,11 @@ const Admin = () => {
       setIsInitialized(true);
     }
   }, [user, navigate, isInitialized, sortBy, sortOrder, startDate, endDate]);
+
+  const confirmDelete = (action) => {
+    setDeleteAction(() => action); // Store the action as a function
+    setIsDeleteModalOpen(true);
+  };
 
   const initializeData = async () => {
     try {
@@ -318,33 +326,37 @@ const fetchTravelPackageGroups = async () => {
   };
 
   const handleDeleteToken = async (mint) => {
-    try {
-      await axios.delete(process.env.REACT_APP_API_URL + '/api/admin/tokens/' + mint, {
-        headers: { Authorization: `Bearer ${tokenAuth}` },
-      });
-      alert('Token deleted!');
-      setHasUnsavedChanges(false);
-      await fetchTokens();
-      await fetchUserTokenBalances();
-    } catch (error) {
-      alert('Failed to delete token: ' + (error.response?.data?.error || error.message));
-    }
+    confirmDelete(async () => {
+      try {
+        await axios.delete(process.env.REACT_APP_API_URL + '/api/admin/tokens/' + mint, {
+          headers: { Authorization: `Bearer ${tokenAuth}` },
+        });
+        alert('Token deleted!');
+        setHasUnsavedChanges(false);
+        await fetchTokens();
+        await fetchUserTokenBalances();
+      } catch (error) {
+        alert('Failed to delete token: ' + (error.response?.data?.error || error.message));
+      }
+    });
   };
 
   const handleDeleteMultipleTokens = async () => {
     if (selectedTokens.length === 0) return alert('Please select at least one token to delete');
-    try {
-      await axios.post(process.env.REACT_APP_API_URL + '/api/admin/tokens/delete', { mints: selectedTokens }, {
-        headers: { Authorization: `Bearer ${tokenAuth}` },
-      });
-      alert(`${selectedTokens.length} token(s) deleted!`);
-      setSelectedTokens([]);
-      setHasUnsavedChanges(false);
-      await fetchTokens();
-      await fetchUserTokenBalances();
-    } catch (error) {
-      alert('Failed to delete tokens: ' + (error.response?.data?.error || error.message));
-    }
+    confirmDelete(async () => {
+      try {
+        await axios.post(process.env.REACT_APP_API_URL + '/api/admin/tokens/delete', { mints: selectedTokens }, {
+          headers: { Authorization: `Bearer ${tokenAuth}` },
+        });
+        alert(`${selectedTokens.length} token(s) deleted!`);
+        setSelectedTokens([]);
+        setHasUnsavedChanges(false);
+        await fetchTokens();
+        await fetchUserTokenBalances();
+      } catch (error) {
+        alert('Failed to delete tokens: ' + (error.response?.data?.error || error.message));
+      }
+    });
   };
 
   const handleCreateTravel = async () => {
@@ -391,6 +403,7 @@ const fetchTravelPackageGroups = async () => {
   };
 
   const handleDeleteTravel = async (id) => {
+    confirmDelete(async () => {
     try {
       await axios.post(process.env.REACT_APP_API_URL + '/api/admin/travel/delete', { ids: [id] }, {
         headers: { Authorization: `Bearer ${tokenAuth}` },
@@ -402,10 +415,12 @@ const fetchTravelPackageGroups = async () => {
       console.error('Failed to delete travel package:', error);
       alert('Failed to delete travel package: ' + (error.response?.data?.error || error.message));
     }
+  });
   };
 
   const handleDeleteMultipleTravel = async () => {
     if (selectedPackages.length === 0) return alert('Please select at least one travel package to delete');
+    confirmDelete(async () => {
     try {
       await axios.post(process.env.REACT_APP_API_URL + '/api/admin/travel/delete', { ids: selectedPackages }, {
         headers: { Authorization: `Bearer ${tokenAuth}` },
@@ -418,6 +433,7 @@ const fetchTravelPackageGroups = async () => {
       console.error('Failed to delete travel packages:', error);
       alert('Failed to delete travel packages: ' + (error.response?.data?.error || error.message));
     }
+  });
   };
 
   const handleSelectPackage = (id) => {
@@ -473,6 +489,7 @@ const fetchTravelPackageGroups = async () => {
 
   const handleDeleteUserGroup = async () => {
     if (!selectedGroup) return alert('Please select a group to delete');
+    confirmDelete(async () => {
     try {
       await axios.post(process.env.REACT_APP_API_URL + '/api/admin/user-groups/delete', {
         groupId: selectedGroup,
@@ -484,10 +501,12 @@ const fetchTravelPackageGroups = async () => {
     } catch (error) {
       alert('Failed to delete user group: ' + (error.response?.data?.error || error.message));
     }
+  });
   };
 
   const handleDeleteMultipleUsers = async () => {
     if (selectedUsers.length === 0) return alert('Please select at least one user to delete');
+    confirmDelete(async () => {
     try {
       await axios.post(process.env.REACT_APP_API_URL + '/api/admin/users/delete', { userIds: selectedUsers }, {
         headers: { Authorization: `Bearer ${tokenAuth}` },
@@ -500,6 +519,7 @@ const fetchTravelPackageGroups = async () => {
     } catch (error) {
       alert('Failed to delete users: ' + (error.response?.data?.error || error.message));
     }
+  });
   };
 
   const handleCreateTravelPackageGroup = async () => {
@@ -542,6 +562,7 @@ const fetchTravelPackageGroups = async () => {
 
   const handleDeleteTravelPackageGroup = async () => {
     if (!selectedGroup) return alert('Please select a group to delete');
+    confirmDelete(async () => {
     try {
       const res = await axios.post(process.env.REACT_APP_API_URL + '/api/travel-package-groups/delete', {
         groupId: selectedGroup,
@@ -554,6 +575,7 @@ const fetchTravelPackageGroups = async () => {
       console.error('Failed to delete travel package group:', error.response?.status, error.response?.data || error.message);
       alert('Failed to delete travel package group: ' + (error.response?.data?.error || error.message));
     }
+  });
   };
 
   const handleCreateUser = async () => {
@@ -602,6 +624,7 @@ const fetchTravelPackageGroups = async () => {
   };
 
   const handleDeleteUser = async (userId) => {
+    confirmDelete(async () => {
     try {
       await axios.post(process.env.REACT_APP_API_URL + '/api/admin/users/delete', { userId }, {
         headers: { Authorization: `Bearer ${tokenAuth}` },
@@ -613,6 +636,7 @@ const fetchTravelPackageGroups = async () => {
     } catch (error) {
       alert('Failed to delete user: ' + (error.response?.data?.error || error.message));
     }
+  }); 
   };
 
   const handleImpersonate = async (userId) => {
@@ -635,6 +659,8 @@ const fetchTravelPackageGroups = async () => {
   const getAdminBalanceForToken = (mint) => {
     return adminTokenBalances[mint] || 0;
   };
+
+  
 
   if (!user || user.role !== 'admin') return null;
 
@@ -1748,7 +1774,20 @@ const fetchTravelPackageGroups = async () => {
   </div>
 )}
       </div>
-    </div>
+   
+    <Modal
+    isOpen={isDeleteModalOpen}
+    onClose={() => setIsDeleteModalOpen(false)}
+    title="Confirm Deletion"
+  >
+    <p>Are you sure you want to delete the selected item(s)? This action cannot be undone.</p>
+    <button onClick={() => {
+      deleteAction();
+      setIsDeleteModalOpen(false);
+    }} className="clean-button delete">Yes, Delete</button>
+    <button onClick={() => setIsDeleteModalOpen(false)} className="clean-button">Cancel</button>
+  </Modal>
+</div>
   );
 };
 
