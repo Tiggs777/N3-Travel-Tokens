@@ -13,9 +13,10 @@ const Navbar = () => {
     navigate('/');
   };
 
-  const handleAdminMenu = (menu) => {
+    const handleAdminMenu = (menu) => {
     if (user && user.role === 'admin') {
-      navigate('/admin', { state: { activeMenu: menu === 'travelPackage' ? 'travelPackageCrud' : menu } });
+      const viewTab = `${menu}View`; // Default to view tab
+      navigate('/admin', { state: { activeMenu: viewTab } });
     }
   };
 
