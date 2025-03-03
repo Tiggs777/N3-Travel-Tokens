@@ -36,7 +36,7 @@ const OnsiteWalletTile = ({ onsiteWallet, onsiteBalance, tokenBalances, fetchPri
         {tokenBalances.length > 0 ? (
           tokenBalances.map((token, index) => (
             <p key={index}>
-              <strong>{token.name} ({token.ticker}):</strong> {token.balance} tokens
+              <strong>{token.name} ({token.ticker}):</strong> {token.balance} / {token.supply !== undefined ? token.supply : 'N/A'} tokens (Held / Minted)
             </p>
           ))
         ) : (
@@ -105,7 +105,19 @@ const Wallet = () => {
         const tokensRes = await axios.get(process.env.REACT_APP_API_URL + '/api/user/tokens', {
           headers: { Authorization: `Bearer ${token}` },
         });
-        const tokens = tokensRes.data;
+        let tokens = tokensRes.data;
+
+        // Fetch supply for admins from /api/admin/tokens
+        if (isAdmin) {
+          const adminTokensRes = await axios.get(process.env.REACT_APP_API_URL + '/api/admin/tokens', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const adminTokens = adminTokensRes.data;
+          tokens = tokens.map(token => ({
+            ...token,
+            supply: adminTokens.find(t => t.mint === token.mint)?.supply || token.supply
+          }));
+        }
 
         const balances = await Promise.all(
           tokens.map(async (token) => {
@@ -114,10 +126,22 @@ const Wallet = () => {
             try {
               const ataAccount = await getAccount(connection, ataAddress);
               const balance = Number(ataAccount.amount) / Math.pow(10, 9);
-              return { mint: token.mint, name: token.name, ticker: token.ticker, balance };
+              return { 
+                mint: token.mint, 
+                name: token.name, 
+                ticker: token.ticker, 
+                balance, 
+                supply: token.supply // Use supply from tokens or adminTokens
+              };
             } catch (error) {
               console.log(`No ATA found for mint ${token.mint}:`, error.message);
-              return { mint: token.mint, name: token.name, ticker: token.ticker, balance: 0 };
+              return { 
+                mint: token.mint, 
+                name: token.name, 
+                ticker: token.ticker, 
+                balance: 0, 
+                supply: token.supply // Use supply even if no balance
+              };
             }
           })
         );

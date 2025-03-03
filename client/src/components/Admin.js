@@ -71,6 +71,19 @@ const Admin = () => {
   }, [userGroups]);
 
   useEffect(() => {
+    if (selectedGroup) {
+      const group = userGroups.find(g => g.id === parseInt(selectedGroup));
+      if (group && group.user_ids) {
+        setSelectedUsers([...group.user_ids]); // Pre-check users in the selected group
+      } else {
+        setSelectedUsers([]); // Clear if group has no users
+      }
+    } else {
+      setSelectedUsers([]); // Clear if no group is selected
+    }
+  }, [selectedGroup, userGroups]);
+
+  useEffect(() => {
     console.log('Active tab updated:', location.state?.activeMenu);
     if (location.state?.activeMenu) {
       setActiveTab(location.state.activeMenu);
@@ -135,13 +148,37 @@ const Admin = () => {
   };
 
   const fetchUserTokenBalances = async () => {
-    const res = await axios.get(process.env.REACT_APP_API_URL + '/api/admin/user-token-balances', {
-      headers: { Authorization: `Bearer ${tokenAuth}` },
-    });
-    setUserTokenBalances(res.data.users || []);
-    setAdminTokenBalances(res.data.admin || {});
-    console.log('Fetched admin balances:', res.data.admin);
-    console.log('Fetched user balances:', res.data.users);
+    try {
+      const res = await axios.get(process.env.REACT_APP_API_URL + '/api/admin/user-token-balances', {
+        headers: { Authorization: `Bearer ${tokenAuth}` },
+      });
+      console.log('Raw API Response:', res.data);
+      const decodedUser = jwtDecode(tokenAuth);
+      console.log('Current User:', decodedUser);
+      const usersBalances = res.data.users || [];
+      let adminBalances = { ...res.data.admin } || {};
+      // Subtract all user balances from admin balances
+      usersBalances.forEach(user => {
+        const userTokens = user.tokens || {};
+        Object.keys(userTokens).forEach(mint => {
+          if (adminBalances[mint] !== undefined) {
+            adminBalances[mint] = Math.max(0, adminBalances[mint] - (userTokens[mint] || 0));
+            // If this is the current user, ensure admin balance reflects only external holdings
+            if (user.userId === decodedUser.id && adminBalances[mint] > 0) {
+              adminBalances[mint] = 0; // Force to 0 if user holds it
+            }
+          }
+        });
+      });
+      console.log('All User Balances:', usersBalances);
+      console.log('Adjusted Admin Balances:', adminBalances);
+      setUserTokenBalances(usersBalances);
+      setAdminTokenBalances(adminBalances);
+    } catch (error) {
+      console.error('Failed to fetch user token balances:', error.response?.data || error.message);
+      setUserTokenBalances([]);
+      setAdminTokenBalances({});
+    }
   };
 
   const fetchUserGroups = async () => {
@@ -250,23 +287,12 @@ const fetchTravelPackageGroups = async () => {
   const handleAirdropTokens = async () => {
     if (!mintTokenId || !mintAmount) 
       return alert('Please select a token and specify an amount');
-    if (!selectedUsers.length && !selectedGroup) 
-      return alert('Please select users or a group to airdrop to');
-  
-    let userIds = [];
-    if (selectedGroup) {
-      const group = userGroups.find(g => g.id === parseInt(selectedGroup));
-      userIds = group ? (group.user_ids || []) : [];
-    } else if (selectedUsers.length) {
-      userIds = selectedUsers;
-    } else {
-      return alert('No valid users selected for airdrop');
-    }
+    if (!selectedUsers.length) 
+      return alert('Please select at least one user to airdrop to');
   
     try {
       const res = await axios.post(process.env.REACT_APP_API_URL + '/api/admin/airdrop', {
-        userIds: userIds.length ? userIds : undefined,
-        groupId: selectedGroup || undefined,
+        userIds: selectedUsers, // Only use selectedUsers, ignore selectedGroup
         amount: parseInt(mintAmount),
         mint: mintTokenId,
       }, { headers: { Authorization: `Bearer ${tokenAuth}` } });
@@ -287,23 +313,12 @@ const fetchTravelPackageGroups = async () => {
   const handleTransferTokens = async () => {
     if (!mintTokenId || !mintAmount) 
       return alert('Please select a token and specify an amount');
-    if (!selectedUsers.length && !selectedGroup) 
-      return alert('Please select users or a group to transfer to');
-  
-    let userIds = [];
-    if (selectedGroup) {
-      const group = userGroups.find(g => g.id === parseInt(selectedGroup));
-      userIds = group ? (group.user_ids || []) : [];
-    } else if (selectedUsers.length) {
-      userIds = selectedUsers;
-    } else {
-      return alert('No valid users selected for transfer');
-    }
+    if (!selectedUsers.length) 
+      return alert('Please select at least one user to transfer to');
   
     try {
       const res = await axios.post(process.env.REACT_APP_API_URL + '/api/admin/transfer', {
-        userIds: userIds.length ? userIds : undefined,
-        groupId: selectedGroup || undefined,
+        userIds: selectedUsers, // Only use selectedUsers, ignore selectedGroup
         amount: parseInt(mintAmount),
         mint: mintTokenId,
       }, { headers: { Authorization: `Bearer ${tokenAuth}` } });
@@ -674,7 +689,12 @@ const fetchTravelPackageGroups = async () => {
 
   const getUserBalanceForToken = (userId, mint) => {
     const userBalance = userTokenBalances.find(b => b.userId === userId);
-    return userBalance ? userBalance.tokens[mint] || 0 : 0;
+    const balance = userBalance && userBalance.tokens ? (userBalance.tokens[mint] || 0) : 0;
+    if (!userBalance || !userBalance.tokens || !userBalance.tokens[mint]) {
+      console.log(`No balance found for user ${userId}, mint ${mint}. Available users:`, userTokenBalances.map(u => u.userId));
+      console.log('User Balance Object:', userBalance);
+    }
+    return balance;
   };
 
   const getAdminBalanceForToken = (mint) => {
@@ -804,65 +824,67 @@ const fetchTravelPackageGroups = async () => {
       <div className="admin-work-area">
         {/* Removed travelView section */}
         {activeTab === 'walletAdmin' && (
-          <div className="work-section">
-            <h2>Admin Wallet</h2>
-            <p>Admin Wallet Balance: {adminTokenBalances.total || 0} tokens</p>
-            <h3>Token Balances</h3>
-            <ul>
-              {Object.entries(adminTokenBalances).map(([mint, balance]) => (
-                <li key={mint}>Token {mint}: {balance} tokens</li>
-              ))}
-            </ul>
-            <h3>Recent Transactions</h3>
-			<p>(Placeholder: Add API call for transaction history here, e.g., mints, transfers, airdrops for admin wallet)</p>
-            {/* Add more wallet-specific details or API calls as needed */}																	   
-          </div>
-        )}
-        {activeTab === 'walletWebsite' && (
-          <div className="work-section">
-            <h2>Website Wallet</h2>
-            <p>Website Wallet Balance: {adminTokenBalances.website || 0} tokens</p>
-            <h3>Token Balances</h3>
-            <ul>
-              {Object.entries(adminTokenBalances).map(([mint, balance]) => (
-               <li key={mint}>Token {mint}: {balance} tokens (Website-specific logic needed)</li>
-              ))}
-            </ul>
-            <h3>Recent Transactions</h3>
-            <p>(Placeholder: Add API call for transaction history here)</p>
-				 {/* Add more wallet-specific details or API calls as needed */}														   
-          </div>
-        )}
-        {activeTab === 'walletWeb' && (
-          <div className="work-section">
-            <h2>Web Wallet</h2>
-            <p>Web Wallet Balance: {adminTokenBalances.web || 0} tokens</p>
-            <h3>Token Balances</h3>
-            <ul>
-              {Object.entries(adminTokenBalances).map(([mint, balance]) => (
-                 <li key={mint}>Token {mint}: {balance} tokens (Web-specific logic needed)</li>
-              ))}
-            </ul>
-            <h3>Recent Transactions</h3>
-            <p>(Placeholder: Add API call for transaction history here)</p>
-				 {/* Add more wallet-specific details or API calls as needed */}														   
-          </div>
-        )}
-        {activeTab === 'walletAll' && (
-          <div className="work-section">
-            <h2>All Wallets</h2>
-            <p>Total Wallet Balances: {Object.values(adminTokenBalances).reduce((sum, val) => sum + (val || 0), 0)} tokens</p>
-            <h3>Wallet Breakdown</h3>
-            <ul>
-              <li>Admin Wallet: {adminTokenBalances.total || 0} tokens</li>
-              <li>Website Wallet: {adminTokenBalances.website || 0} tokens</li>
-              <li>Web Wallet: {adminTokenBalances.web || 0} tokens</li>
-            </ul>
-            <h3>Recent Transactions</h3>
-            <p>(Placeholder: Add API call for aggregate transaction history here)</p>
-				{/* Add more wallet-specific details or API calls as needed */}														   
-          </div>
-        )}
+  <div className="work-section">
+    <h2>Admin Wallet</h2>
+    <p>Admin Wallet Token Balances: {Object.values(adminTokenBalances).reduce((sum, val) => sum + (val || 0), 0)} tokens</p>
+    <h3>Token Balances (Held / Minted)</h3>
+    <ul>
+      {tokens.map(token => (
+        <li key={token.mint}>{token.name} ({token.ticker}): {getAdminBalanceForToken(token.mint)} / {token.supply} tokens</li>
+      ))}
+    </ul>
+    <h3>Recent Transactions</h3>
+    <p>(Placeholder: Add API call for transaction history here, e.g., mints, transfers, airdrops for admin wallet)</p>
+  </div>
+)}
+      {activeTab === 'walletWebsite' && (
+  <div className="work-section">
+    <h2>Website Wallet</h2>
+    <p>Website Wallet Balance: {adminTokenBalances.website || Object.values(adminTokenBalances).reduce((sum, val) => sum + (val || 0), 0)} tokens</p>
+    <h3>Token Balances (Held / Minted)</h3>
+    <ul>
+      {tokens.map(token => (
+        <li key={token.mint}>{token.name} ({token.ticker}): {getAdminBalanceForToken(token.mint)} / {token.supply} tokens</li>
+      ))}
+    </ul>
+    <h3>Recent Transactions</h3>
+    <p>(Placeholder: Add API call for transaction history here)</p>
+  </div>
+)}
+       {activeTab === 'walletWeb' && (
+  <div className="work-section">
+    <h2>Web Wallet</h2>
+    <p>Web Wallet Balance: {adminTokenBalances.web || Object.values(adminTokenBalances).reduce((sum, val) => sum + (val || 0), 0)} tokens</p>
+    <h3>Token Balances (Held / Minted)</h3>
+    <ul>
+      {tokens.map(token => (
+        <li key={token.mint}>{token.name} ({token.ticker}): {getAdminBalanceForToken(token.mint)} / {token.supply} tokens</li>
+      ))}
+    </ul>
+    <h3>Recent Transactions</h3>
+    <p>(Placeholder: Add API call for transaction history here)</p>
+  </div>
+)}
+       {activeTab === 'walletAll' && (
+  <div className="work-section">
+    <h2>All Wallets</h2>
+    <p>Total Wallet Balances: {Object.values(adminTokenBalances).reduce((sum, val) => sum + (val || 0), 0)} tokens</p>
+    <h3>Wallet Breakdown</h3>
+    <ul>
+      <li>Admin Wallet: {Object.values(adminTokenBalances).reduce((sum, val) => sum + (val || 0), 0)} tokens</li>
+      <li>Website Wallet: {adminTokenBalances.website || 0} tokens</li>
+      <li>Web Wallet: {adminTokenBalances.web || 0} tokens</li>
+    </ul>
+    <h3>Token Balances Across All Wallets (Held / Minted)</h3>
+    <ul>
+      {tokens.map(token => (
+        <li key={token.mint}>{token.name} ({token.ticker}): {getAdminBalanceForToken(token.mint)} / {token.supply} tokens</li>
+      ))}
+    </ul>
+    <h3>Recent Transactions</h3>
+    <p>(Placeholder: Add API call for aggregate transaction history here)</p>
+  </div>
+)}
         {activeTab === 'tokensMint' && (
           <div className="work-section">
             <h2>Mint more Tokens</h2>
@@ -878,304 +900,341 @@ const fetchTravelPackageGroups = async () => {
             <button onClick={handleMintToken} className="clean-button">Mint</button>
           </div>
         )}
-     {activeTab === 'tokensAirdrop' && (
-          <div className="work-section">
-            <h2>Airdrop to Users</h2>
-            <div className="user-selection-area">
-              <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)} className="clean-select">
-                <option value="">All Users</option>
-                {userGroups.map(group => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <th>Select</th>
-                    <th>Email</th>
-                    <th>Wallet</th>
-                    <th>Token Balances</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedGroup ? (
-                    (userGroups.find(g => g.id === parseInt(selectedGroup))?.user_ids || []).map(userId => {
-                      const user = users.find(u => u.id === userId);
-                      return user ? (
-                        <tr key={user.id}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={selectedUsers.includes(user.id)}
-                              onChange={() => handleSelectUser(user.id)}
-                            />
-                          </td>
-                          <td>{user.email}</td>
-                          <td>{user.wallet}</td>
-                          <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)}`).join(', ')}</td>
-                        </tr>
-                      ) : null;
-                    })
-                  ) : (
-                    users.map(user => (
-                      <tr key={user.id}>
-                        <td>
-                          <input
-                            type="checkbox"
-                            checked={selectedUsers.includes(user.id)}
-                            onChange={() => handleSelectUser(user.id)}
-                          />
-                        </td>
-                        <td>{user.email}</td>
-                        <td>{user.wallet}</td>
-                        <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)}`).join(', ')}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <select value={mintTokenId} onChange={(e) => setMintTokenId(e.target.value)} className="clean-select">
-              <option value="">Select Token</option>
-              {tokens.map(token => (
-                <option key={token.mint} value={token.mint}>
-                  {token.name} ({token.ticker})
-                </option>
-              ))}
-            </select>
-            <input value={mintAmount} onChange={(e) => setMintAmount(e.target.value)} placeholder="Amount" type="number" className="clean-input" />
-            <button onClick={handleAirdropTokens} className="clean-button">Airdrop</button>
-          </div>
-        )}
-        {activeTab === 'tokensTransfer' && (
-          <div className="work-section">
-            <h2>Transfer to Users</h2>
-            <div className="user-selection-area">
-              <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)} className="clean-select">
-                <option value="">All Users</option>
-                {userGroups.map(group => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
-              <table className="user-table">
-                <thead>
-                  <tr>
-                    <th>Select</th>
-                    <th>Email</th>
-                    <th>Wallet</th>
-                    <th>Token Balances</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {selectedGroup ? (
-                    (userGroups.find(g => g.id === parseInt(selectedGroup))?.user_ids || []).map(userId => {
-                      const user = users.find(u => u.id === userId);
-                      return user ? (
-                        <tr key={user.id}>
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={selectedUsers.includes(user.id)}
-                              onChange={() => handleSelectUser(user.id)}
-                            />
-                          </td>
-                          <td>{user.email}</td>
-                          <td>{user.wallet}</td>
-                          <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)}`).join(', ')}</td>
-                        </tr>
-                      ) : null;
-                    })
-                  ) : (
-                    users.map(user => (
-                      <tr key={user.id}>
-                        <td>
-                          <input
-                            type="checkbox"
-                            checked={selectedUsers.includes(user.id)}
-                            onChange={() => handleSelectUser(user.id)}
-                          />
-                        </td>
-                        <td>{user.email}</td>
-                        <td>{user.wallet}</td>
-                        <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)}`).join(', ')}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <select value={mintTokenId} onChange={(e) => setMintTokenId(e.target.value)} className="clean-select">
-              <option value="">Select Token</option>
-              {tokens.map(token => (
-                <option key={token.mint} value={token.mint}>
-                  {token.name} ({token.ticker})
-                </option>
-              ))}
-            </select>
-            <input value={mintAmount} onChange={(e) => setMintAmount(e.target.value)} placeholder="Amount" type="number" className="clean-input" />
-            <button onClick={handleTransferTokens} className="clean-button">Transfer</button>
-          </div>
-        )}
-        {activeTab === 'tokensCrud' && (
-          <div className="work-section">
-            <h2>Tokens CRUD Panel</h2>
-            <div className="crud-controls">
-              <div className="user-filters">
-                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="clean-select">
-                  <option value="created_at">Creation Date</option>
-                  <option value="name">Name</option>
-                  <option value="mint">Mint</option>
-                </select>
-                <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="clean-select">
-                  <option value="asc">Ascending</option>
-                  <option value="desc">Descending</option>
-                </select>
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} placeholder="Start Date" className="clean-input" />
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} placeholder="End Date" className="clean-input" />
-                <button onClick={fetchTokens} className="clean-button">Filter</button>
-              </div>
-              <div className="create-token-form">
-                <input value={tokenName} onChange={(e) => setTokenName(e.target.value)} placeholder="Name" className="clean-input" />
-                <input value={tokenSupply} onChange={(e) => setTokenSupply(e.target.value)} placeholder="Supply" type="number" className="clean-input" />
-                <input value={tokenImage} onChange={(e) => setTokenImage(e.target.value)} placeholder="Image URL" className="clean-input" />
-                <input value={tokenDesc} onChange={(e) => setTokenDesc(e.target.value)} placeholder="Description" className="clean-input" />
-                <input value={tokenTicker} onChange={(e) => setTokenTicker(e.target.value)} placeholder="Ticker" className="clean-input" />
-                <button onClick={handleCreateToken} className="clean-button">Add Token</button>
-              </div>
-            </div>
-            <table className="token-table">
-              <thead>
-                <tr>
-                  <th>Select</th>
-                  <th>Mint</th>
-                  <th>Name</th>
-                  <th>Ticker</th>
-                  <th>Supply</th>
-                  <th>Thumbnail</th>
-                  <th>Description</th>
-                  <th>Actions</th>
+    {activeTab === 'tokensAirdrop' && (
+  <div className="work-section">
+    <h2>Airdrop to Users</h2>
+    <div className="user-selection-area">
+      <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)} className="clean-select">
+        <option value="">All Users</option>
+        {userGroups.map(group => (
+          <option key={group.id} value={group.id}>
+            {group.name}
+          </option>
+        ))}
+      </select>
+      <table className="user-table">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Email</th>
+            <th>Wallet</th>
+            <th>Token Balances (Held / Minted)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {selectedGroup ? (
+            (userGroups.find(g => g.id === parseInt(selectedGroup))?.user_ids || []).map(userId => {
+              const user = users.find(u => u.id === userId);
+              return user ? (
+                <tr key={user.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.includes(user.id)}
+                      onChange={() => handleSelectUser(user.id)}
+                    />
+                  </td>
+                  <td>{user.email}</td>
+                  <td>{user.wallet}</td>
+                  <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)} / ${t.supply}`).join(', ')}</td>
                 </tr>
-              </thead>
-              <tbody>
-                {tokens.map(token => (
-                  <tr key={token.mint}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedTokens.includes(token.mint)}
-                        onChange={() => handleSelectToken(token.mint)}
-                      />
-                    </td>
-                    {editingToken && editingToken.mint === token.mint ? (
-                      <>
-                        <td>{token.mint}</td>
-                        <td><input value={editingToken.name} onChange={(e) => setEditingToken({ ...editingToken, name: e.target.value })} className="clean-input" /></td>
-                        <td><input value={editingToken.ticker} onChange={(e) => setEditingToken({ ...editingToken, ticker: e.target.value })} className="clean-input" /></td>
-                        <td><input value={editingToken.supply} onChange={(e) => setEditingToken({ ...editingToken, supply: e.target.value })} type="number" className="clean-input" /></td>
-                        <td><img src={editingToken.image_url} alt={editingToken.name} className="thumbnail" /></td>
-                        <td><input value={editingToken.description} onChange={(e) => setEditingToken({ ...editingToken, description: e.target.value })} className="clean-input" /></td>
-                        <td>
-                          <button onClick={handleSaveToken} className="clean-button">Save</button>
-                          <button onClick={() => setEditingToken(null)} className="clean-button">Cancel</button>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td>{token.mint}</td>
-                        <td>{token.name}</td>
-                        <td>{token.ticker}</td>
-                        <td>{token.supply}</td>
-                        <td><img src={token.image_url} alt={token.name} className="thumbnail" /></td>
-                        <td>{token.description}</td>
-                        <td>
-                          <button onClick={() => handleEditToken(token)} className="clean-button">Edit</button>
-                          <button onClick={() => handleDeleteToken(token.mint)} className="clean-button delete">Delete</button>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {activeTab === 'tokensView' && (
-        <div className="work-section">
-          <h2>View Tokens</h2>
-          <div className="view-toggle">
-            <button
-              className={tokenViewMode === 'list' ? 'tab active' : 'tab'}
-              onClick={() => setTokenViewMode('list')}
-            >
-              List
-            </button>
-            <button
-              className={tokenViewMode === 'tiles' ? 'tab active' : 'tab'}
-              onClick={() => setTokenViewMode('tiles')}
-            >
-              Tiles
-            </button>
-          </div>
-          <button onClick={handleDeleteMultipleTokens} className="delete-selected">Delete Selected</button>
-          {tokenViewMode === 'list' ? (
-            <table className="token-table">
-              <thead>
-                <tr>
-                  <th>Select</th>
-                  <th>Mint</th>
-                  <th>Name</th>
-                  <th>Ticker</th>
-                  <th>Supply</th>
-                  <th>Thumbnail</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tokens.map(token => (
-                  <tr key={token.mint} onClick={() => setSelectedToken(token)} style={{ cursor: 'pointer' }}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selectedTokens.includes(token.mint)}
-                        onChange={() => handleSelectToken(token.mint)}
-                        onClick={e => e.stopPropagation()} // Prevent row click
-                      />
-                    </td>
-                    <td>{token.mint}</td>
-                    <td>{token.name}</td>
-                    <td>{token.ticker}</td>
-                    <td>{token.supply}</td>
-                    <td><img src={token.image_url} alt={token.name} className="thumbnail" /></td>
-                    <td>{token.description}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              ) : null;
+            })
           ) : (
-            <div className="token-tiles">
-              {tokens.map(token => (
-                <div key={token.mint} className="token-tile" onClick={() => setSelectedToken(token)}>
+            users.map(user => (
+              <tr key={user.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedUsers.includes(user.id)}
+                    onChange={() => handleSelectUser(user.id)}
+                  />
+                </td>
+                <td>{user.email}</td>
+                <td>{user.wallet}</td>
+                <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)} / ${t.supply}`).join(', ')}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+    <select value={mintTokenId} onChange={(e) => setMintTokenId(e.target.value)} className="clean-select">
+      <option value="">Select Token</option>
+      {tokens.map(token => (
+        <option key={token.mint} value={token.mint}>
+          {token.name} ({token.ticker})
+        </option>
+      ))}
+    </select>
+    <input value={mintAmount} onChange={(e) => setMintAmount(e.target.value)} placeholder="Amount" type="number" className="clean-input" />
+    <button onClick={handleAirdropTokens} className="clean-button">Airdrop</button>
+  </div>
+)}
+      {activeTab === 'tokensTransfer' && (
+  <div className="work-section">
+    <h2>Transfer to Users</h2>
+    <div className="user-selection-area">
+      <select value={selectedGroup} onChange={(e) => setSelectedGroup(e.target.value)} className="clean-select">
+        <option value="">All Users</option>
+        {userGroups.map(group => (
+          <option key={group.id} value={group.id}>
+            {group.name}
+          </option>
+        ))}
+      </select>
+      <table className="user-table">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Email</th>
+            <th>Wallet</th>
+            <th>Token Balances (Held / Minted)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {selectedGroup ? (
+            (userGroups.find(g => g.id === parseInt(selectedGroup))?.user_ids || []).map(userId => {
+              const user = users.find(u => u.id === userId);
+              return user ? (
+                <tr key={user.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.includes(user.id)}
+                      onChange={() => handleSelectUser(user.id)}
+                    />
+                  </td>
+                  <td>{user.email}</td>
+                  <td>{user.wallet}</td>
+                  <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)} / ${t.supply}`).join(', ')}</td>
+                </tr>
+              ) : null;
+            })
+          ) : (
+            users.map(user => (
+              <tr key={user.id}>
+                <td>
+                  <input
+                    type="checkbox"
+                    checked={selectedUsers.includes(user.id)}
+                    onChange={() => handleSelectUser(user.id)}
+                  />
+                </td>
+                <td>{user.email}</td>
+                <td>{user.wallet}</td>
+                <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)} / ${t.supply}`).join(', ')}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+    <select value={mintTokenId} onChange={(e) => setMintTokenId(e.target.value)} className="clean-select">
+      <option value="">Select Token</option>
+      {tokens.map(token => (
+        <option key={token.mint} value={token.mint}>
+          {token.name} ({token.ticker})
+        </option>
+      ))}
+    </select>
+    <input value={mintAmount} onChange={(e) => setMintAmount(e.target.value)} placeholder="Amount" type="number" className="clean-input" />
+    <button onClick={handleTransferTokens} className="clean-button">Transfer</button>
+  </div>
+)}
+    {activeTab === 'tokensCrud' && (
+  <div className="work-section">
+    <h2>Tokens CRUD Panel</h2>
+    <div className="crud-controls">
+      <div className="user-filters">
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="clean-select">
+          <option value="created_at">Creation Date</option>
+          <option value="name">Name</option>
+          <option value="mint">Mint</option>
+        </select>
+        <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="clean-select">
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
+        </select>
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} placeholder="Start Date" className="clean-input" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} placeholder="End Date" className="clean-input" />
+        <button onClick={fetchTokens} className="clean-button">Filter</button>
+      </div>
+      <div className="create-token-form">
+        <input value={tokenName} onChange={(e) => setTokenName(e.target.value)} placeholder="Name" className="clean-input" />
+        <input value={tokenSupply} onChange={(e) => setTokenSupply(e.target.value)} placeholder="Supply" type="number" className="clean-input" />
+        <input value={tokenImage} onChange={(e) => setTokenImage(e.target.value)} placeholder="Image URL" className="clean-input" />
+        <input value={tokenDesc} onChange={(e) => setTokenDesc(e.target.value)} placeholder="Description" className="clean-input" />
+        <input value={tokenTicker} onChange={(e) => setTokenTicker(e.target.value)} placeholder="Ticker" className="clean-input" />
+        <button onClick={handleCreateToken} className="clean-button">Add Token</button>
+      </div>
+    </div>
+    <table className="token-table">
+      <thead>
+        <tr>
+          <th>Select</th>
+          <th>Mint</th>
+          <th>Name</th>
+          <th>Ticker</th>
+          <th>Supply</th>
+          <th>Thumbnail</th>
+          <th>Description</th>
+          <th>Remaining</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {tokens.map(token => (
+          <tr key={token.mint}>
+            <td>
+              <input
+                type="checkbox"
+                checked={selectedTokens.includes(token.mint)}
+                onChange={() => handleSelectToken(token.mint)}
+              />
+            </td>
+            {editingToken && editingToken.mint === token.mint ? (
+              <>
+                <td>{token.mint}</td>
+                <td><input value={editingToken.name} onChange={(e) => setEditingToken({ ...editingToken, name: e.target.value })} className="clean-input" /></td>
+                <td><input value={editingToken.ticker} onChange={(e) => setEditingToken({ ...editingToken, ticker: e.target.value })} className="clean-input" /></td>
+                <td><input value={editingToken.supply} onChange={(e) => setEditingToken({ ...editingToken, supply: e.target.value })} type="number" className="clean-input" /></td>
+                <td><img src={editingToken.image_url} alt={editingToken.name} className="thumbnail" /></td>
+                <td><input value={editingToken.description} onChange={(e) => setEditingToken({ ...editingToken, description: e.target.value })} className="clean-input" /></td>
+                <td>
+                  {(() => {
+                    const decodedUser = jwtDecode(tokenAuth);
+                    const currentUserBalance = userTokenBalances.find(b => b.userId === decodedUser.id);
+                    const userTotal = currentUserBalance ? (currentUserBalance.tokens[token.mint] || 0) : 0;
+                    const adminTotal = getAdminBalanceForToken(token.mint) || 0;
+                    const remaining = editingToken.supply - (userTotal + adminTotal);
+                    console.log(`Token ${token.ticker} (Edit): Supply=${editingToken.supply}, UserTotal=${userTotal}, AdminTotal=${adminTotal}, Remaining=${remaining}`);
+                    return isNaN(remaining) ? 'Loading...' : Math.round(remaining);
+                  })()}
+                </td>
+                <td>
+                  <button onClick={handleSaveToken} className="clean-button">Save</button>
+                  <button onClick={() => setEditingToken(null)} className="clean-button">Cancel</button>
+                </td>
+              </>
+            ) : (
+              <>
+                <td>{token.mint}</td>
+                <td>{token.name}</td>
+                <td>{token.ticker}</td>
+                <td>{token.supply}</td>
+                <td><img src={token.image_url} alt={token.name} className="thumbnail" /></td>
+                <td>{token.description}</td>
+                <td>
+                  {(() => {
+                    const decodedUser = jwtDecode(tokenAuth);
+                    const currentUserBalance = userTokenBalances.find(b => b.userId === decodedUser.id);
+                    const userTotal = currentUserBalance ? (currentUserBalance.tokens[token.mint] || 0) : 0;
+                    const adminTotal = getAdminBalanceForToken(token.mint) || 0;
+                    const remaining = token.supply - (userTotal + adminTotal);
+                    console.log(`Token ${token.ticker}: Supply=${token.supply}, UserTotal=${userTotal}, AdminTotal=${adminTotal}, Remaining=${remaining}`);
+                    return isNaN(remaining) ? 'Loading...' : Math.round(remaining);
+                  })()}
+                </td>
+                <td>
+                  <button onClick={() => handleEditToken(token)} className="clean-button">Edit</button>
+                  <button onClick={() => handleDeleteToken(token.mint)} className="clean-button delete">Delete</button>
+                </td>
+              </>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
+{activeTab === 'tokensView' && (
+  <div className="work-section">
+    <h2>View Tokens</h2>
+    <div className="view-toggle">
+      <button className={tokenViewMode === 'list' ? 'tab active' : 'tab'} onClick={() => setTokenViewMode('list')}>
+        List
+      </button>
+      <button className={tokenViewMode === 'tiles' ? 'tab active' : 'tab'} onClick={() => setTokenViewMode('tiles')}>
+        Tiles
+      </button>
+    </div>
+    <button onClick={handleDeleteMultipleTokens} className="delete-selected">Delete Selected</button>
+    {!tokens.length ? (
+      <p>Loading tokens...</p>
+    ) : tokenViewMode === 'list' ? (
+      <table className="token-table">
+        <thead>
+          <tr>
+            <th>Select</th>
+            <th>Mint</th>
+            <th>Name</th>
+            <th>Ticker</th>
+            <th>Supply</th>
+            <th>Thumbnail</th>
+            <th>Description</th>
+            <th>Remaining</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tokens.map(token => {
+            const decodedUser = jwtDecode(tokenAuth);
+            const currentUserBalance = userTokenBalances.find(b => b.userId === decodedUser.id);
+            const userTotal = currentUserBalance ? (currentUserBalance.tokens[token.mint] || 0) : 0;
+            const adminTotal = getAdminBalanceForToken(token.mint) || 0;
+            const remaining = token.supply - (userTotal + adminTotal);
+            console.log(`Token ${token.ticker}: Supply=${token.supply}, UserTotal=${userTotal}, AdminTotal=${adminTotal}, Remaining=${remaining}`);
+            return (
+              <tr key={token.mint} onClick={() => setSelectedToken(token)} style={{ cursor: 'pointer' }}>
+                <td>
                   <input
                     type="checkbox"
                     checked={selectedTokens.includes(token.mint)}
                     onChange={() => handleSelectToken(token.mint)}
                     onClick={e => e.stopPropagation()}
                   />
-                  <img src={token.image_url} alt={token.name} className="token-image" />
-                  <h3>{token.name} ({token.ticker})</h3>
-                  <p>Supply: {token.supply}</p>
-                  <p>{token.description}</p>
-                  <p>Mint: {token.mint}</p>
-                </div>
-              ))}
+                </td>
+                <td>{token.mint}</td>
+                <td>{token.name}</td>
+                <td>{token.ticker}</td>
+                <td>{token.supply}</td>
+                <td><img src={token.image_url} alt={token.name} className="thumbnail" /></td>
+                <td>{token.description}</td>
+                <td>{isNaN(remaining) ? 'Loading...' : Math.round(remaining)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    ) : (
+      <div className="token-tiles">
+        {tokens.map(token => {
+          const decodedUser = jwtDecode(tokenAuth);
+          const currentUserBalance = userTokenBalances.find(b => b.userId === decodedUser.id);
+          const userTotal = currentUserBalance ? (currentUserBalance.tokens[token.mint] || 0) : 0;
+          const adminTotal = getAdminBalanceForToken(token.mint) || 0;
+          const remaining = token.supply - (userTotal + adminTotal);
+          return (
+            <div key={token.mint} className="token-tile" onClick={() => setSelectedToken(token)}>
+              <input
+                type="checkbox"
+                checked={selectedTokens.includes(token.mint)}
+                onChange={() => handleSelectToken(token.mint)}
+                onClick={e => e.stopPropagation()}
+              />
+              <img src={token.image_url} alt={token.name} className="token-image" />
+              <h3>{token.name} ({token.ticker})</h3>
+              <p>Supply: {token.supply}</p>
+              <p>{token.description}</p>
+              <p>Mint: {token.mint}</p>
+              <p>Remaining: {isNaN(remaining) ? 'Loading...' : Math.round(remaining)}</p>
             </div>
-          )}
-        </div>
-        )}
+          );
+        })}
+      </div>
+    )}
+  </div>
+)}
         {activeTab === 'usersView' && (<div className="work-section">
   <h2>View Users</h2>
   <div className="view-toggle">
@@ -1197,7 +1256,7 @@ const fetchTravelPackageGroups = async () => {
           <th>Wallet</th>
           <th>Created</th>
           <th>Role</th>
-          <th>Token Balances</th>
+          <th>Token Balances (Held / Minted)</th>
         </tr>
       </thead>
       <tbody>
@@ -1216,7 +1275,7 @@ const fetchTravelPackageGroups = async () => {
             <td>{user.wallet}</td>
             <td>{new Date(user.created_at).toLocaleDateString()}</td>
             <td>{user.role}</td>
-            <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)}`).join(', ')}</td>
+            <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)} / ${t.supply}`).join(', ')}</td>
           </tr>
         ))}
       </tbody>
@@ -1236,95 +1295,96 @@ const fetchTravelPackageGroups = async () => {
           <p>Wallet: {user.wallet || 'N/A'}</p>
           <p>Created: {new Date(user.created_at).toLocaleDateString()}</p>
           <p>Role: {user.role}</p>
-          <p>Token Balances: {tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)}`).join(', ') || 'None'}</p>
+          <p>Token Balances (Held / Minted): {tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)} / ${t.supply}`).join(', ') || 'None'}</p>
         </div>
       ))}
     </div>
   )}
 </div>
 )}
-        {activeTab === 'usersCrud' && (
-          <div className="work-section">
-            <h2>User CRUD + groups</h2>
-            <div className="crud-controls">
-              <div className="user-filters">
-                <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="clean-select">
-                  <option value="created_at">Creation Date</option>
-                  <option value="email">Email</option>
-                  <option value="id">ID</option>
-                </select>
-                <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="clean-select">
-                  <option value="asc">Ascending</option>
-                  <option value="desc">Descending</option>
-                </select>
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} placeholder="Start Date" className="clean-input" />
-                <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} placeholder="End Date" className="clean-input" />
-                <button onClick={fetchUsers} className="clean-button">Filter</button>
-              </div>
-              <div className="create-user-form">
-                <input value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} placeholder="Email" className="clean-input" />
-                <input value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} placeholder="Password" type="password" className="clean-input" />
-                <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value)} className="clean-select">
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-                <button onClick={handleCreateUser} className="clean-button">Add User</button>
-              </div>
-            </div>
-            <table className="user-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Email</th>
-                  <th>Wallet</th>
-                  <th>Created</th>
-                  <th>Role</th>
-                  <th>Token Balances</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map(user => (
-                  <tr key={user.id}>
-                    {editingUser && editingUser.id === user.id ? (
-                      <>
-                        <td>{user.id}</td>
-                        <td><input value={editingUser.email} onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })} className="clean-input" /></td>
-                        <td><input value={editingUser.wallet} onChange={(e) => setEditingUser({ ...editingUser, wallet: e.target.value })} className="clean-input" /></td>
-                        <td>{new Date(editingUser.created_at).toLocaleDateString()}</td>
-                        <td>
-                          <select value={editingUser.role} onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })} className="clean-select">
-                            <option value="user">User</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                        </td>
-                        <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)}`).join(', ')}</td>
-                        <td>
-                          <button onClick={handleSaveUser} className="clean-button">Save</button>
-                          <button onClick={() => setEditingUser(null)} className="clean-button">Cancel</button>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td>{user.id}</td>
-                        <td>{user.email}</td>
-                        <td>{user.wallet}</td>
-                        <td>{new Date(user.created_at).toLocaleDateString()}</td>
-                        <td>{user.role}</td>
-                        <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)}`).join(', ')}</td>
-                        <td>
-                          <button onClick={() => handleEditUser(user)} className="clean-button">Edit</button>
-                          <button onClick={() => handleDeleteUser(user.id)} className="clean-button delete">Delete</button>
-                          <button onClick={() => handleImpersonate(user.id)} className="clean-button">Log in as</button>
-                        </td>
-                      </>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+
+{activeTab === 'usersCrud' && (
+  <div className="work-section">
+    <h2>User CRUD + groups</h2>
+    <div className="crud-controls">
+      <div className="user-filters">
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="clean-select">
+          <option value="created_at">Creation Date</option>
+          <option value="email">Email</option>
+          <option value="id">ID</option>
+        </select>
+        <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="clean-select">
+          <option value="asc">Ascending</option>
+          <option value="desc">Descending</option>
+        </select>
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} placeholder="Start Date" className="clean-input" />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} placeholder="End Date" className="clean-input" />
+        <button onClick={fetchUsers} className="clean-button">Filter</button>
+      </div>
+      <div className="create-user-form">
+        <input value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} placeholder="Email" className="clean-input" />
+        <input value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} placeholder="Password" type="password" className="clean-input" />
+        <select value={newUserRole} onChange={(e) => setNewUserRole(e.target.value)} className="clean-select">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button onClick={handleCreateUser} className="clean-button">Add User</button>
+      </div>
+    </div>
+    <table className="user-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Email</th>
+          <th>Wallet</th>
+          <th>Created</th>
+          <th>Role</th>
+          <th>Token Balances (Held / Minted)</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {users.map(user => (
+          <tr key={user.id}>
+            {editingUser && editingUser.id === user.id ? (
+              <>
+                <td>{user.id}</td>
+                <td><input value={editingUser.email} onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })} className="clean-input" /></td>
+                <td><input value={editingUser.wallet} onChange={(e) => setEditingUser({ ...editingUser, wallet: e.target.value })} className="clean-input" /></td>
+                <td>{new Date(editingUser.created_at).toLocaleDateString()}</td>
+                <td>
+                  <select value={editingUser.role} onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })} className="clean-select">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </td>
+                <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)} / ${t.supply}`).join(', ')}</td>
+                <td>
+                  <button onClick={handleSaveUser} className="clean-button">Save</button>
+                  <button onClick={() => setEditingUser(null)} className="clean-button">Cancel</button>
+                </td>
+              </>
+            ) : (
+              <>
+                <td>{user.id}</td>
+                <td>{user.email}</td>
+                <td>{user.wallet}</td>
+                <td>{new Date(user.created_at).toLocaleDateString()}</td>
+                <td>{user.role}</td>
+                <td>{tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(user.id, t.mint)} / ${t.supply}`).join(', ')}</td>
+                <td>
+                  <button onClick={() => handleEditUser(user)} className="clean-button">Edit</button>
+                  <button onClick={() => handleDeleteUser(user.id)} className="clean-button delete">Delete</button>
+                  <button onClick={() => handleImpersonate(user.id)} className="clean-button">Log in as</button>
+                </td>
+              </>
+            )}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+)}
       {activeTab === 'usersGroups' && (
   <div className="work-section">
     <h2>User Groups</h2>
@@ -1839,39 +1899,19 @@ const fetchTravelPackageGroups = async () => {
       </div>
 
       <Modal
-        isOpen={isDeleteModalOpen}
-        onClose={() => setIsDeleteModalOpen(false)}
-        title="Confirm Deletion"
-      >
-        <p>Are you sure you want to delete the selected item(s)? This action cannot be undone.</p>
-        <div className="modal-button-group">
-          <button
-            onClick={() => {
-              deleteAction();
-              setIsDeleteModalOpen(false);
-            }}
-            className="clean-button delete"
-          >
-            Yes, Delete
-          </button>
-          <button onClick={() => setIsDeleteModalOpen(false)} className="clean-button">
-            Cancel
-          </button>
-        </div>
-      </Modal>
-      <Modal
   isOpen={!!selectedUser}
   onClose={() => setSelectedUser(null)}
   title={selectedUser?.email || 'User Details'}
 >
   {selectedUser && (
-    <div className="user-detail-card"> {/* New class for user details */}
+    <div className="user-detail-card">
+      <button className="modal-close-button" onClick={() => setSelectedUser(null)}>✕</button>
       <h3>{selectedUser.email}</h3>
       <p><strong>ID:</strong> {selectedUser.id}</p>
       <p><strong>Wallet:</strong> {selectedUser.wallet || 'N/A'}</p>
       <p><strong>Created:</strong> {new Date(selectedUser.created_at).toLocaleDateString()}</p>
       <p><strong>Role:</strong> {selectedUser.role}</p>
-      <p><strong>Token Balances:</strong> {tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(selectedUser.id, t.mint)}`).join(', ') || 'None'}</p>
+      <p><strong>Token Balances (Held / Minted):</strong> {tokens.map(t => `${t.ticker}: ${getUserBalanceForToken(selectedUser.id, t.mint)} / ${t.supply}`).join(', ') || 'None'}</p>
       <div className="modal-button-group">
         <button onClick={() => setSelectedUser(null)} className="clean-button">
           Close
@@ -1880,7 +1920,6 @@ const fetchTravelPackageGroups = async () => {
     </div>
   )}
 </Modal>
-
 <Modal
   isOpen={!!selectedTravelPackage}
   onClose={() => setSelectedTravelPackage(null)}
