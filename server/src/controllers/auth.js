@@ -31,7 +31,7 @@ exports.login = async (req, res) => {
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const token = jwt.sign({ id: user.id, role: user.role }, 'secret', { expiresIn: '1h' });
+    const token = jwt.sign({ id: user.id, role: user.role, email: user.email }, 'secret', { expiresIn: '1h' });
     res.json({ token });
   } catch (error) {
     console.error('Login error:', error.message, error.stack);
@@ -47,7 +47,7 @@ exports.adminLogin = async (req, res) => {
     if (!admin || !(await bcrypt.compare(password, admin.password))) {
       return res.status(401).json({ error: 'Invalid admin credentials' });
     }
-    const token = jwt.sign({ id: admin.id, role: 'admin' }, 'secret', { expiresIn: '1h' });
+    const token = jwt.sign({ id: admin.id, role: 'admin', email: user.email }, 'secret', { expiresIn: '1h' });
     res.json({ token });
   } catch (error) {
     console.error('Admin login error:', error.message, error.stack);

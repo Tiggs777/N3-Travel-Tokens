@@ -5,7 +5,7 @@ const { mintTo, getOrCreateAssociatedTokenAccount, getAssociatedTokenAddress, cr
 const { sendAndConfirmTransaction } = require('@solana/web3.js');
 const bcrypt = require('bcrypt');
 
-const YOUR_ADMIN_SECRET_KEY_ARRAY = require("/home/tiggs777/.config/solana/id.json");
+const YOUR_ADMIN_SECRET_KEY_ARRAY = require("/root/.config/solana/id.json");
 const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
 const adminKeypair = Keypair.fromSecretKey(Uint8Array.from(YOUR_ADMIN_SECRET_KEY_ARRAY));
 const { createTransferInstruction } = require('@solana/spl-token');

@@ -38,11 +38,11 @@ const Navbar = () => {
           <>
             <Link to="/login" className="navbar-button">Login</Link>
             <Link to="/signup" className="navbar-button">Create Account</Link>
-            <Link to="/admin-login" className="navbar-button">Admin Login</Link>
+            
           </>
         ) : (
           <>
-            <span className="navbar-user">Welcome, Admin</span>
+            <span className="navbar-user">Welcome, {user.email} ({user.role})</span>
             <button onClick={handleLogout} className="navbar-button logout">Logout</button>
           </>
         )}
